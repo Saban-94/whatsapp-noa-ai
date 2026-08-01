@@ -1,8 +1,9 @@
-import React, { useEffect, useRef } from 'react';
-import { Check, CheckCheck, FileText, Download, Bot } from 'lucide-react';
+import React, { useEffect, useRef, useState } from 'react';
+import { Check, CheckCheck, FileText, Download, Bot, Maximize2 } from 'lucide-react';
 import { Message } from '../../types';
 import { WaveformPlayer } from './WaveformPlayer';
 import { FormattedMessage } from './FormattedMessage';
+import { MediaLightboxModal } from './MediaLightboxModal';
 
 interface MessageListProps {
   messages: Message[];
@@ -22,6 +23,13 @@ export const MessageList: React.FC<MessageListProps> = ({
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const prevChatIdRef = useRef<string | undefined>(chatId);
+
+  const [selectedMedia, setSelectedMedia] = useState<{
+    mediaUrl: string;
+    caption?: string;
+    senderName?: string;
+    timestamp?: string;
+  } | null>(null);
 
   const scrollToBottom = (behavior: ScrollBehavior = 'smooth') => {
     if (messagesEndRef.current) {
@@ -71,6 +79,7 @@ export const MessageList: React.FC<MessageListProps> = ({
       {messages.map((msg, index) => {
         const isUser = msg.sender === 'user';
         const isAi = msg.sender === 'ai';
+        const senderDisplayName = isUser ? 'אתה' : isAi ? 'Noa AI (נועה)' : contactName;
 
         return (
           <div
@@ -95,13 +104,27 @@ export const MessageList: React.FC<MessageListProps> = ({
 
               {/* Media Content Rendering */}
               {msg.type === 'image' && msg.mediaUrl && (
-                <div className="mb-2 rounded-lg overflow-hidden max-h-60 bg-black/20">
+                <div
+                  className="mb-2 rounded-lg overflow-hidden max-h-60 bg-black/20 relative group cursor-pointer"
+                  onClick={() =>
+                    setSelectedMedia({
+                      mediaUrl: msg.mediaUrl!,
+                      caption: msg.text,
+                      senderName: senderDisplayName,
+                      timestamp: msg.timestamp,
+                    })
+                  }
+                >
                   <img
                     src={msg.mediaUrl}
                     alt="תמונה מצורפת"
                     onLoad={() => scrollToBottom('smooth')}
-                    className="w-full h-full object-cover hover:scale-102 transition-transform cursor-pointer"
+                    className="w-full h-full object-cover group-hover:scale-102 transition-transform duration-200"
                   />
+                  <div className="absolute inset-0 bg-black/30 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2 text-white text-xs font-medium">
+                    <Maximize2 className="w-5 h-5 drop-shadow-md" />
+                    <span>לחץ לתצוגה מלאה</span>
+                  </div>
                 </div>
               )}
 
@@ -114,7 +137,7 @@ export const MessageList: React.FC<MessageListProps> = ({
                     <p className="text-xs font-semibold truncate">{msg.fileName || 'מסמך_SabanOS.pdf'}</p>
                     <p className="text-[10px] text-[#8696a0]">{msg.fileSize || '1.2 MB · PDF'}</p>
                   </div>
-                  <button className="p-1.5 rounded-full hover:bg-black/20 text-[#00a884]">
+                  <button className="p-1.5 rounded-full hover:bg-black/20 text-[#00a884] cursor-pointer">
                     <Download className="w-4 h-4" />
                   </button>
                 </div>
@@ -143,6 +166,17 @@ export const MessageList: React.FC<MessageListProps> = ({
       })}
 
       <div ref={messagesEndRef} />
+
+      {/* Media Lightbox Modal */}
+      <MediaLightboxModal
+        isOpen={!!selectedMedia}
+        mediaUrl={selectedMedia?.mediaUrl || null}
+        caption={selectedMedia?.caption}
+        senderName={selectedMedia?.senderName}
+        timestamp={selectedMedia?.timestamp}
+        onClose={() => setSelectedMedia(null)}
+      />
     </div>
   );
 };
+
