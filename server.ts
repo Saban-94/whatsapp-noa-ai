@@ -208,58 +208,98 @@ app.post("/api/chat/respond", async (req, res) => {
   const fullSystemInstruction = `${systemPrompt}${kbContext}\n\nאתה משיב כעת בצ'אט וואטסאפ ללקוח בשם: "${contactName}". השב בצורה טבעית, תמציתית, מועילה, ובעברית בלבד.`;
 
   if (ai) {
-    try {
-      // Build conversation turns for Gemini
-      const contents = conversationHistory.slice(-10).map((msg: any) => ({
-        role: msg.sender === "user" ? "user" : "model",
-        parts: [{ text: msg.text || "" }],
-      }));
+    const candidateModels = Array.from(
+      new Set([
+        serverSettings.activeModel || "gemini-3.6-flash",
+        "gemini-2.5-flash",
+        "gemini-2.0-flash",
+        "gemini-1.5-flash",
+      ])
+    );
 
-      // Append current user message if not included
-      if (contents.length === 0 || contents[contents.length - 1].role !== "user") {
-        contents.push({
-          role: "user",
-          parts: [{ text: userMessage }],
+    // Build conversation turns for Gemini
+    const contents = conversationHistory.slice(-10).map((msg: any) => ({
+      role: msg.sender === "user" ? "user" : "model",
+      parts: [{ text: msg.text || "" }],
+    }));
+
+    // Append current user message if not included
+    if (contents.length === 0 || contents[contents.length - 1].role !== "user") {
+      contents.push({
+        role: "user",
+        parts: [{ text: userMessage }],
+      });
+    }
+
+    for (const modelName of candidateModels) {
+      try {
+        const response = await ai.models.generateContent({
+          model: modelName,
+          contents: contents,
+          config: {
+            systemInstruction: fullSystemInstruction,
+            temperature: 0.7,
+          },
         });
+
+        const replyText = response.text || "קיבלתי את הודעתך, אשמח לעזור!";
+
+        return res.json({
+          success: true,
+          text: replyText,
+          source: "gemini",
+          modelUsed: modelName,
+          timestamp: new Date().toISOString(),
+        });
+      } catch (err: any) {
+        const isQuotaError =
+          err?.status === 429 ||
+          err?.message?.includes("429") ||
+          err?.message?.includes("quota") ||
+          err?.message?.includes("RESOURCE_EXHAUSTED");
+
+        if (isQuotaError) {
+          console.warn(`[Gemini Quota Exceeded on ${modelName}] Trying next model or local engine...`);
+        } else {
+          console.warn(`[Gemini Call Issue on ${modelName}]:`, err?.message || err);
+        }
       }
-
-      const response = await ai.models.generateContent({
-        model: serverSettings.activeModel || "gemini-3.6-flash",
-        contents: contents,
-        config: {
-          systemInstruction: fullSystemInstruction,
-          temperature: 0.7,
-        },
-      });
-
-      const replyText = response.text || "קיבלתי את הודעתך, אשמח לעזור!";
-
-      return res.json({
-        success: true,
-        text: replyText,
-        source: "gemini",
-        timestamp: new Date().toISOString(),
-      });
-    } catch (err: any) {
-      console.error("Gemini API Error:", err);
-      // Fallback response if Gemini fails or key reaches limit
     }
   }
 
-  // Smart Intelligent Local Fallback Response based on keywords
-  let replyText = "שלום! קיבלתי את הודעתך. במה אוכל לסייע לך היום מבית SabanOS?";
+  // Smart Intelligent Local Fallback Response based on Knowledge Base & keywords
   const lowerMsg = (userMessage || "").toLowerCase();
+  let replyText = "";
 
-  if (lowerMsg.includes("תפריט") || lowerMsg.includes("אוכל") || lowerMsg.includes("מנה")) {
-    replyText = "בוודאי! התפריט היומי שלנו מעודכן בסינכרון מול SabanOS. תוכל לבחור בין מנות ראשונות, עיקריות וקינוחים. תרצה שאשלח לך את מחירון המנות?";
-  } else if (lowerMsg.includes("שעות") || lowerMsg.includes("מתי פתוח") || lowerMsg.includes("זמנים")) {
-    replyText = "אנחנו פתוחים בימים א'-ה' בין השעות 09:00 ל-23:00, ובימי שישי עד 15:00. נשמח לראותכם!";
-  } else if (lowerMsg.includes("הזמנה") || lowerMsg.includes("שולחן") || lowerMsg.includes("מקום")) {
-    replyText = "בטח! אשמח לרשום עבורך הזמנה. לכמה אנשים ההזמנה ועבור באיזה תאריך ושעה?";
-  } else if (lowerMsg.includes("מחיר") || lowerMsg.includes("עלות") || lowerMsg.includes("כמה עולה")) {
-    replyText = "המחירון המלא מעודכן במערכת SabanOS. עסקיות צהריים החל מ-55 ₪. תרצה לקבל פילוח לפי קטגוריה?";
-  } else if (lowerMsg.includes("סבג") || lowerMsg.includes("דוד") || lowerMsg.includes("משלוח")) {
-    replyText = "היי דוד, המשלוח שלך מסאבאן ספורט יצא לדרך ונמצא כעת אצל השליח. חותמת הסנכרון התקבלה מ-SabanOS!";
+  // 1. Try Knowledge Base direct match
+  if (Array.isArray(knowledgeBase) && knowledgeBase.length > 0) {
+    const activeKb = knowledgeBase.filter((k: any) => k.isEnabled !== false);
+    const matchedKb = activeKb.find((k: any) => {
+      const titleMatch = k.title && lowerMsg.includes(k.title.toLowerCase());
+      const categoryMatch = k.category && lowerMsg.includes(k.category.toLowerCase());
+      return titleMatch || categoryMatch;
+    });
+
+    if (matchedKb) {
+      replyText = `מידע ממאגר SabanOS בנושא *${matchedKb.title}*:\n${matchedKb.content}`;
+    }
+  }
+
+  // 2. Keyword based fallback
+  if (!replyText) {
+    if (lowerMsg.includes("תפריט") || lowerMsg.includes("אוכל") || lowerMsg.includes("מנה")) {
+      replyText = "בוודאי! התפריט היומי שלנו מעודכן בסינכרון מול SabanOS. תוכל לבחור בין מנות ראשונות, עיקריות וקינוחים. תרצה שאשלח לך את מחירון המנות?";
+    } else if (lowerMsg.includes("שעות") || lowerMsg.includes("מתי פתוח") || lowerMsg.includes("זמנים")) {
+      replyText = "אנחנו פתוחים בימים א'-ה' בין השעות 08:00 ל-18:00, ובימי שישי עד 13:00. נשמח לראותכם!";
+    } else if (lowerMsg.includes("הזמנה") || lowerMsg.includes("משלוח") || lowerMsg.includes("ציוד")) {
+      replyText = "שלום! *ההזמנה שלך נקלטה במערכת SabanOS* 🚛\nצוות הלוגיסטיקה מכין את המשלוח ויוצר קשר לתיאום סופי.";
+    } else if (lowerMsg.includes("מיקום") || lowerMsg.includes("כתובת") || lowerMsg.includes("ניווט") || lowerMsg.includes("waze")) {
+      replyText = "📍 הסניף המרכזי שלנו ממוקם ב*רחוב הברזל 11, תל אביב*. לחץ לניווט ב-Waze: https://waze.com/ul?ll=32.1092,34.8389&navigate=yes 🗺️";
+    } else if (lowerMsg.includes("מחיר") || lowerMsg.includes("עלות") || lowerMsg.includes("כמה עולה")) {
+      replyText = "המחירון המלא מעודכן במערכת SabanOS. תרצה לקבל פירוט והצעת מחיר מותאמת אישית?";
+    } else {
+      replyText = "שלום! הודעתך נקלטה במערכת SabanOS. נשמח לסייע לך בכל שאלה לגבי משלוחים, הזמנות ומידע נוסף! 😊";
+    }
   }
 
   res.json({

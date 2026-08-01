@@ -31,6 +31,12 @@ export const ChatList: React.FC<ChatListProps> = ({
         const isActive = chat.id === activeChatId;
         const lastMsg = chat.messages[chat.messages.length - 1];
         const contact = chat.contact;
+        const isBlueTicksForChat =
+          contact.blueTicksOverride === 'enabled'
+            ? true
+            : contact.blueTicksOverride === 'disabled'
+            ? false
+            : enableBlueTicks;
 
         return (
           <div
@@ -79,7 +85,7 @@ export const ChatList: React.FC<ChatListProps> = ({
                   {/* Read receipts icon */}
                   {lastMsg && lastMsg.sender === 'user' && (
                     lastMsg.status === 'read' ? (
-                      <CheckCheck className={`w-3.5 h-3.5 ${enableBlueTicks ? 'text-[#53bdeb]' : 'text-[#8696a0]'} shrink-0`} />
+                      <CheckCheck className={`w-3.5 h-3.5 ${isBlueTicksForChat ? 'text-[#53bdeb]' : 'text-[#8696a0]'} shrink-0`} />
                     ) : (
                       <Check className="w-3.5 h-3.5 text-[#8696a0] shrink-0" />
                     )

@@ -20,6 +20,7 @@ import { MessageList } from './components/Chat/MessageList';
 import { MessageInput } from './components/Chat/MessageInput';
 import { ContactInfoModal } from './components/Chat/ContactInfoModal';
 import { AdminModal } from './components/Admin/AdminModal';
+import { SplashGateway } from './components/SplashGateway';
 import { playWhatsAppIncomingSound, playWhatsAppOutgoingSound } from './utils/audio';
 
 export default function App() {
@@ -35,6 +36,7 @@ export default function App() {
   const [isAdminOpen, setIsAdminOpen] = useState(false);
   const [isNewChatOpen, setIsNewChatOpen] = useState(false);
   const [isContactInfoOpen, setIsContactInfoOpen] = useState(false);
+  const [isGatewayOpen, setIsGatewayOpen] = useState(true);
   const [isTyping, setIsTyping] = useState(false);
   const [mobileShowChat, setMobileShowChat] = useState(false);
 
@@ -116,6 +118,18 @@ export default function App() {
       prev.map((c) =>
         c.id === activeChat.id
           ? { ...c, contact: { ...c.contact, isPinned: !c.contact.isPinned } }
+          : c
+      )
+    );
+  };
+
+  // Update Blue Ticks Override for current contact
+  const handleUpdateContactBlueTicks = (override: 'global' | 'enabled' | 'disabled') => {
+    if (!activeChat) return;
+    setChats((prev) =>
+      prev.map((c) =>
+        c.id === activeChat.id
+          ? { ...c, contact: { ...c.contact, blueTicksOverride: override } }
           : c
       )
     );
@@ -382,6 +396,7 @@ export default function App() {
             <SidebarHeader
               onOpenAdmin={() => setIsAdminOpen(true)}
               onOpenNewChat={() => setIsNewChatOpen(true)}
+              onOpenGateway={() => setIsGatewayOpen(true)}
               darkTheme={settings.darkTheme}
             />
             <SearchBar
@@ -420,12 +435,20 @@ export default function App() {
                     messages={activeChat.messages}
                     darkTheme={settings.darkTheme}
                     contactName={activeChat.contact.name}
-                    enableBlueTicks={settings.enableBlueTicks}
+                    enableBlueTicks={
+                      activeChat.contact.blueTicksOverride === 'enabled'
+                        ? true
+                        : activeChat.contact.blueTicksOverride === 'disabled'
+                        ? false
+                        : (settings.enableBlueTicks ?? true)
+                    }
+                    chatId={activeChat.id}
                   />
                   <MessageInput
                     onSendMessage={handleSendMessage}
                     darkTheme={settings.darkTheme}
                     isAiManaged={activeChat.contact.isAiManaged}
+                    quickReplies={settings.quickReplies}
                   />
                 </div>
 
@@ -436,6 +459,8 @@ export default function App() {
                   onClose={() => setIsContactInfoOpen(false)}
                   onToggleAi={handleToggleAiForContact}
                   onTogglePin={handleTogglePinContact}
+                  onUpdateContactBlueTicks={handleUpdateContactBlueTicks}
+                  globalBlueTicks={settings.enableBlueTicks}
                   darkTheme={settings.darkTheme}
                 />
               </div>
@@ -475,6 +500,13 @@ export default function App() {
         onSendHumanOverrideMessage={handleSendHumanOverrideMessage}
         onTestWebhook={handleTestWebhook}
         onResetData={handleResetData}
+      />
+
+      {/* ENTRANCE GATEWAY DOOR SPLIT MODAL */}
+      <SplashGateway
+        isOpen={isGatewayOpen}
+        onClose={() => setIsGatewayOpen(false)}
+        darkTheme={settings.darkTheme}
       />
 
     </div>

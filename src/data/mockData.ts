@@ -1,4 +1,35 @@
-import { Chat, KnowledgeItem, AdminSettings } from '../types';
+import { Chat, KnowledgeItem, AdminSettings, QuickReply } from '../types';
+
+export const DEFAULT_QUICK_REPLIES: QuickReply[] = [
+  {
+    id: 'qr_1',
+    title: '📍 כתובת ומיקום (Waze & Maps)',
+    text: 'שלום! 📍 הסניף המרכזי שלנו ממוקם ב*רחוב הברזל 11, תל אביב*. לחץ לניווט ב-Waze: https://waze.com/ul?ll=32.1092,34.8389&navigate=yes 🗺️ נשמח לראותכם!',
+    shortcut: 'מיקום',
+    category: 'מיקומים',
+  },
+  {
+    id: 'qr_2',
+    title: '⏰ שעות פעילות וזמינות',
+    text: 'זמני הפעילות שלנו ב-SabanOS: ⏰\n• ימים א\'-ה\': 08:00 - 18:00\n• יום שישי: 08:00 - 13:00\n• שבת ומועדים: סגור\nנשמח לעמוד לשירותכם בשעות הפעילות! ⚡',
+    shortcut: 'שעות',
+    category: 'מידע כללי',
+  },
+  {
+    id: 'qr_3',
+    title: '📦 אישור הזמנה ומשלוח',
+    text: 'שלום! *ההזמנה שלך נקלטה בהצלחה* במערכת SabanOS! 🚛\nצוות הלוגיסטיקה שלנו מכין את המשלוח. נעדכן אותך ברגע שהנהג יוצא לדרך. תודה שבחרת בנו! 🙏',
+    shortcut: 'הזמנה',
+    category: 'משלוחים',
+  },
+  {
+    id: 'qr_4',
+    title: '🙏 תודה ויום מצוין',
+    text: 'תודה רבה! נשמח לעמוד לשירותך שוב בכל עת. שיהיה המשך יום נפלא ומצוין! 😊✨',
+    shortcut: 'תודה',
+    category: 'שירות',
+  },
+];
 
 export const INITIAL_SETTINGS: AdminSettings = {
   systemPrompt: `אתה נועה AI (Noa AI) - העוזרת החכמה והמנהלת האישית של מערכת SabanOS.
@@ -24,6 +55,7 @@ export const INITIAL_SETTINGS: AdminSettings = {
   businessDays: [0, 1, 2, 3, 4], // ראשון - חמישי
   outsideHoursMode: "out_of_office_msg",
   outsideHoursMessage: "שלום! פנית אלינו מחוץ לשעות הפעילות (08:00 - 18:00). הודעתך נקלטה במערכת SabanOS ונשוב אליך בהקדם בשעות הפעילות! ⏰",
+  quickReplies: DEFAULT_QUICK_REPLIES,
 };
 
 export const INITIAL_KNOWLEDGE_BASE: KnowledgeItem[] = [
@@ -69,7 +101,7 @@ export const INITIAL_CHATS: Chat[] = [
       id: 'c_noa',
       name: 'נועה AI ⚡ (SabanOS)',
       phone: '050-9988776',
-      avatar: 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?w=150&auto=format&fit=crop&q=80',
+      avatar: 'https://i.ibb.co/Zz6H1zth/1785576538638.png',
       statusText: 'עוזרת ה-AI החכמה של SabanOS | מחוברת בסנכרון חי',
       isOnline: true,
       isPinned: true,
@@ -83,7 +115,7 @@ export const INITIAL_CHATS: Chat[] = [
         id: 'm1',
         chatId: 'chat_noa_ai',
         sender: 'ai',
-        text: 'שלום! שמי נועה, סוכנת ה-AI החכמה של מערכת SabanOS. 👋',
+        text: '*שלום! שמי נועה*, סוכנת ה-AI החכמה של מערכת *SabanOS* 👋',
         timestamp: '10:00',
         status: 'read',
       },
@@ -91,8 +123,16 @@ export const INITIAL_CHATS: Chat[] = [
         id: 'm2',
         chatId: 'chat_noa_ai',
         sender: 'ai',
-        text: 'קישור ה-Google Apps Script Web App חובר והוגדר בהצלחה במערכת:\nhttps://script.google.com/macros/s/AKfycbwvTGiE1h1AR9csbFhVQczFbOpHVXpyQN6MlIQX1NykSvJnjfi6_zipZOj76xnPqfk/exec\n\nסנכרון בזמן אמת מופעל כעת. במה אוכל לסייע לך היום?',
+        text: '📍 *מיקומים וניווט מהיר ב-Waze:* \n▫️ סניף מרכז: https://www.waze.com/ul?ll=32.1093,34.8389&navigate=yes\n▫️ סניף דרום: https://www.waze.com/ul?ll=31.2518,34.7913&navigate=yes',
         timestamp: '10:01',
+        status: 'read',
+      },
+      {
+        id: 'm3',
+        chatId: 'chat_noa_ai',
+        sender: 'ai',
+        text: '🔗 קישור ה-Google Apps Script Web App חובר והוגדר בהצלחה:\nhttps://script.google.com/macros/s/AKfycbwvTGiE1h1AR9csbFhVQczFbOpHVXpyQN6MlIQX1NykSvJnjfi6_zipZOj76xnPqfk/exec\n\n_סנכרון בזמן אמת מופעל כעת._ במה אוכל לסייע לך היום?',
+        timestamp: '10:02',
         status: 'read',
       },
     ],

@@ -2,12 +2,14 @@ import React, { useEffect, useRef } from 'react';
 import { Check, CheckCheck, FileText, Download, Bot } from 'lucide-react';
 import { Message } from '../../types';
 import { WaveformPlayer } from './WaveformPlayer';
+import { FormattedMessage } from './FormattedMessage';
 
 interface MessageListProps {
   messages: Message[];
   darkTheme: boolean;
   contactName: string;
   enableBlueTicks?: boolean;
+  chatId?: string;
 }
 
 export const MessageList: React.FC<MessageListProps> = ({
@@ -15,21 +17,46 @@ export const MessageList: React.FC<MessageListProps> = ({
   darkTheme,
   contactName,
   enableBlueTicks = true,
+  chatId,
 }) => {
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const prevChatIdRef = useRef<string | undefined>(chatId);
 
-  const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  const scrollToBottom = (behavior: ScrollBehavior = 'smooth') => {
+    if (messagesEndRef.current) {
+      messagesEndRef.current.scrollIntoView({ behavior, block: 'end' });
+    } else if (containerRef.current) {
+      containerRef.current.scrollTop = containerRef.current.scrollHeight;
+    }
   };
 
   useEffect(() => {
-    scrollToBottom();
-  }, [messages]);
+    const isChatChanged = prevChatIdRef.current !== chatId;
+    prevChatIdRef.current = chatId;
+
+    // Use instant scroll for chat switches to avoid smooth scrolling delay from old position,
+    // and smooth scroll for new messages in the active chat.
+    const scrollBehavior = isChatChanged ? 'auto' : 'smooth';
+
+    // 1. Immediate scroll
+    scrollToBottom(scrollBehavior);
+
+    // 2. Delayed scroll after DOM layout & text formatting paint
+    const timer = setTimeout(() => {
+      scrollToBottom(scrollBehavior);
+    }, 60);
+
+    return () => clearTimeout(timer);
+  }, [messages, chatId, contactName]);
 
   return (
-    <div className={`flex-1 overflow-y-auto p-4 md:px-12 space-y-3 relative ${
-      darkTheme ? 'whatsapp-chat-bg-dark' : 'whatsapp-chat-bg-light'
-    }`}>
+    <div
+      ref={containerRef}
+      className={`flex-1 overflow-y-auto p-4 md:px-12 space-y-3 relative ${
+        darkTheme ? 'whatsapp-chat-bg-dark' : 'whatsapp-chat-bg-light'
+      }`}
+    >
       {/* Encryption Notice Badge */}
       <div className="flex justify-center my-2">
         <div className={`text-[11px] px-4 py-1.5 rounded-lg text-center shadow-xs max-w-sm border ${
@@ -72,6 +99,7 @@ export const MessageList: React.FC<MessageListProps> = ({
                   <img
                     src={msg.mediaUrl}
                     alt="תמונה מצורפת"
+                    onLoad={() => scrollToBottom('smooth')}
                     className="w-full h-full object-cover hover:scale-102 transition-transform cursor-pointer"
                   />
                 </div>
@@ -95,9 +123,7 @@ export const MessageList: React.FC<MessageListProps> = ({
               {msg.type === 'voice_note' || msg.isVoiceNote ? (
                 <WaveformPlayer duration={msg.audioDuration} isOutgoing={isUser} />
               ) : (
-                <p className="whitespace-pre-wrap leading-relaxed break-words">
-                  {msg.text}
-                </p>
+                <FormattedMessage text={msg.text} />
               )}
 
               {/* Timestamp & Read Receipts */}

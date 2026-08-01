@@ -59,10 +59,19 @@ export const ChatHeader: React.FC<ChatHeaderProps> = ({
               </span>
             )}
           </h2>
-          <p className="text-xs text-[#8696a0] truncate">
+          <p className="text-xs text-[#8696a0] truncate mt-0.5">
             {isTyping ? (
-              <span className="text-[#00a884] font-medium animate-pulse">
-                מקליד/ה...
+              <span className="inline-flex items-center gap-1.5 text-[#00a884] font-semibold text-[11px] bg-[#00a884]/15 border border-[#00a884]/30 px-2 py-0.5 rounded-full animate-pulse">
+                <span className="relative flex h-2 w-2 shrink-0">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#00a884] opacity-75"></span>
+                  <span className="relative inline-flex rounded-full h-2 w-2 bg-[#00a884]"></span>
+                </span>
+                <span>מקליד/ה</span>
+                <span className="flex items-center gap-0.5 text-[#00a884] font-bold">
+                  <span className="w-1 h-1 bg-[#00a884] rounded-full animate-bounce [animation-delay:-0.3s]"></span>
+                  <span className="w-1 h-1 bg-[#00a884] rounded-full animate-bounce [animation-delay:-0.15s]"></span>
+                  <span className="w-1 h-1 bg-[#00a884] rounded-full animate-bounce"></span>
+                </span>
               </span>
             ) : contact.isOnline ? (
               <span className="text-[#00a884]">מקוון</span>

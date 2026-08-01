@@ -23,8 +23,17 @@ import {
   Calendar,
   Moon,
   CheckCheck,
+  Sparkles,
+  Link,
+  Navigation,
+  Zap,
+  Copy,
+  MessageSquareQuote,
 } from 'lucide-react';
-import { Chat, KnowledgeItem, AdminSettings, WebhookLog } from '../../types';
+import { Chat, KnowledgeItem, AdminSettings, WebhookLog, QuickReply } from '../../types';
+import { HEBREW_WHATSAPP_TEMPLATES } from '../../data/whatsappTemplates';
+import { DEFAULT_QUICK_REPLIES } from '../../data/mockData';
+import { FormattedMessage } from '../Chat/FormattedMessage';
 import { playWhatsAppIncomingSound } from '../../utils/audio';
 
 interface AdminModalProps {
@@ -54,7 +63,7 @@ export const AdminModal: React.FC<AdminModalProps> = ({
   onTestWebhook,
   onResetData,
 }) => {
-  const [activeTab, setActiveTab] = useState<'kpi' | 'crm' | 'prompt' | 'hours' | 'webhook' | 'settings'>('kpi');
+  const [activeTab, setActiveTab] = useState<'kpi' | 'crm' | 'prompt' | 'quick_replies' | 'hours' | 'webhook' | 'settings'>('kpi');
   const [selectedCrmChatId, setSelectedCrmChatId] = useState<string>(chats[0]?.id || '');
   const [overrideText, setOverrideText] = useState('');
   const [isTestingWebhook, setIsTestingWebhook] = useState(false);
@@ -68,6 +77,53 @@ export const AdminModal: React.FC<AdminModalProps> = ({
   const [newCategory, setNewCategory] = useState('');
   const [newTitle, setNewTitle] = useState('');
   const [newContent, setNewContent] = useState('');
+
+  // Quick Reply form state
+  const [newQrTitle, setNewQrTitle] = useState('');
+  const [newQrShortcut, setNewQrShortcut] = useState('');
+  const [newQrCategory, setNewQrCategory] = useState('');
+  const [newQrText, setNewQrText] = useState('');
+  const [copiedQrId, setCopiedQrId] = useState<string | null>(null);
+
+  const handleAddQuickReply = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newQrTitle.trim() || !newQrText.trim()) return;
+
+    const newQr: QuickReply = {
+      id: `qr_${Date.now()}`,
+      title: newQrTitle.trim(),
+      shortcut: newQrShortcut.replace(/^\//, '').trim() || undefined,
+      category: newQrCategory.trim() || 'כללי',
+      text: newQrText.trim(),
+    };
+
+    const currentList = settings.quickReplies || DEFAULT_QUICK_REPLIES;
+    const updated = [...currentList, newQr];
+    onUpdateSettings({ ...settings, quickReplies: updated });
+
+    setNewQrTitle('');
+    setNewQrShortcut('');
+    setNewQrCategory('');
+    setNewQrText('');
+  };
+
+  const handleDeleteQuickReply = (id: string) => {
+    const currentList = settings.quickReplies || DEFAULT_QUICK_REPLIES;
+    const updated = currentList.filter((q) => q.id !== id);
+    onUpdateSettings({ ...settings, quickReplies: updated });
+  };
+
+  const handleResetQuickRepliesToDefault = () => {
+    if (window.confirm('האם להחזיר את כל התגובות המהירות לתגובות ברירת המחדל?')) {
+      onUpdateSettings({ ...settings, quickReplies: DEFAULT_QUICK_REPLIES });
+    }
+  };
+
+  const handleCopyQrText = (id: string, text: string) => {
+    navigator.clipboard.writeText(text);
+    setCopiedQrId(id);
+    setTimeout(() => setCopiedQrId(null), 2000);
+  };
 
   const checkIsCurrentlyBusinessHours = () => {
     if (!settings.businessHoursEnabled) return true;
@@ -226,6 +282,18 @@ export const AdminModal: React.FC<AdminModalProps> = ({
           >
             <BookOpen className="w-4 h-4" />
             עורך פרומפט ומאגר ידע
+          </button>
+
+          <button
+            onClick={() => setActiveTab('quick_replies')}
+            className={`px-4 py-3 text-xs font-semibold flex items-center gap-2 border-b-2 transition-colors ${
+              activeTab === 'quick_replies'
+                ? 'border-[#00a884] text-[#00a884]'
+                : 'border-transparent text-[#8696a0] hover:text-[#e9edef]'
+            }`}
+          >
+            <Zap className="w-4 h-4 text-amber-400" />
+            תגובות מהירות (Quick Replies)
           </button>
 
           <button
@@ -524,6 +592,217 @@ export const AdminModal: React.FC<AdminModalProps> = ({
                           <Trash2 className="w-4 h-4" />
                         </button>
                       </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Hebrew WhatsApp Content Templates & Parser Showcase */}
+              <div className="bg-[#202c33] p-5 rounded-xl border border-[#2a3942] space-y-4">
+                <div className="flex items-center justify-between border-b border-[#2a3942] pb-3">
+                  <div className="flex items-center gap-2 text-[#00a884]">
+                    <Sparkles className="w-5 h-5" />
+                    <div>
+                      <h3 className="text-sm font-bold text-white">ערכת תבניות WhatsApp ומנוע עיבוד תוכן בעברית</h3>
+                      <p className="text-xs text-[#8696a0]">
+                        תצוגה מקדימה לניתוח וסריקה של לינקים ל-Waze/Maps, אימוג'ים וטיפוגרפיית WhatsApp מקצועית
+                      </p>
+                    </div>
+                  </div>
+                  <span className="text-[10px] bg-[#00a884]/20 text-[#00a884] px-2.5 py-1 rounded-full font-bold border border-[#00a884]/30">
+                    3 תבניות מוכנות
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+                  {HEBREW_WHATSAPP_TEMPLATES.map((tpl) => (
+                    <div key={tpl.id} className="bg-[#111b21] p-4 rounded-xl border border-[#2a3942] flex flex-col justify-between space-y-3">
+                      <div className="space-y-2">
+                        <div className="flex items-center gap-2">
+                          <span className="text-base">{tpl.icon}</span>
+                          <h4 className="text-xs font-bold text-white">{tpl.title}</h4>
+                        </div>
+                        <p className="text-[11px] text-[#8696a0] leading-relaxed">{tpl.description}</p>
+                      </div>
+
+                      {/* Rendered WhatsApp Preview Box */}
+                      <div className="bg-[#005c4b]/30 p-3 rounded-lg border border-[#00a884]/30 text-xs text-[#e9edef] max-h-52 overflow-y-auto">
+                        <FormattedMessage text={tpl.content} />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* TAB: Quick Replies */}
+          {activeTab === 'quick_replies' && (
+            <div className="space-y-6">
+              {/* Header Banner */}
+              <div className="bg-[#202c33] p-5 rounded-xl border border-[#2a3942] flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+                <div className="flex items-center gap-3">
+                  <div className="p-3 bg-amber-500/20 rounded-2xl text-amber-400 border border-amber-500/30">
+                    <Zap className="w-6 h-6" />
+                  </div>
+                  <div>
+                    <h3 className="text-base font-bold text-white flex items-center gap-2">
+                      ניהול תגובות מהירות (Quick Replies)
+                      <span className="bg-amber-500/20 text-amber-400 text-xs px-2.5 py-0.5 rounded-full font-bold">
+                        {(settings.quickReplies || DEFAULT_QUICK_REPLIES).length} תגובות מוגדרות
+                      </span>
+                    </h3>
+                    <p className="text-xs text-[#8696a0] mt-1">
+                      הגדר תשובות מוכנות מראש לשימוש מיידי בצ'אט בלחיצת כפתור או באמצעות הקלדת <code className="text-amber-300 font-mono">/</code> בתיבת הטקסט.
+                    </p>
+                  </div>
+                </div>
+
+                <button
+                  onClick={handleResetQuickRepliesToDefault}
+                  className="px-3.5 py-2 bg-[#182229] hover:bg-[#2a3942] text-[#e9edef] rounded-xl text-xs font-semibold border border-[#2a3942] transition-colors flex items-center gap-1.5 shrink-0 cursor-pointer"
+                  title="אפס לתגובות ברירת המחדל"
+                >
+                  <RefreshCw className="w-3.5 h-3.5 text-amber-400" />
+                  <span>אפס לתגובות ברירת מחדל</span>
+                </button>
+              </div>
+
+              {/* Add New Quick Reply Form */}
+              <form onSubmit={handleAddQuickReply} className="bg-[#202c33] p-5 rounded-xl border border-[#2a3942] space-y-4">
+                <h3 className="text-sm font-bold text-[#00a884] flex items-center gap-2">
+                  <Plus className="w-4 h-4" />
+                  הוספת תגובה מהירה חדשה
+                </h3>
+
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                  <div>
+                    <label className="block text-xs text-[#8696a0] mb-1 font-medium">כותרת התגובה *</label>
+                    <input
+                      type="text"
+                      value={newQrTitle}
+                      onChange={(e) => setNewQrTitle(e.target.value)}
+                      placeholder="לדוגמה: 📍 כתובת וניווט"
+                      className="w-full px-3 py-2 bg-[#111b21] border border-[#2a3942] rounded-lg text-xs text-[#e9edef] focus:outline-none focus:border-[#00a884]"
+                      required
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs text-[#8696a0] mb-1 font-medium">קיצור דרך (Shortcut)</label>
+                    <div className="relative">
+                      <span className="absolute right-3 top-2 text-[#8696a0] font-mono text-xs">/</span>
+                      <input
+                        type="text"
+                        value={newQrShortcut}
+                        onChange={(e) => setNewQrShortcut(e.target.value)}
+                        placeholder="מיקום"
+                        className="w-full pr-7 pl-3 py-2 bg-[#111b21] border border-[#2a3942] rounded-lg text-xs text-[#e9edef] focus:outline-none focus:border-[#00a884] font-mono dir-rtl"
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs text-[#8696a0] mb-1 font-medium">קטגוריה</label>
+                    <input
+                      type="text"
+                      value={newQrCategory}
+                      onChange={(e) => setNewQrCategory(e.target.value)}
+                      placeholder="מיקומים / שירות / משלוחים"
+                      className="w-full px-3 py-2 bg-[#111b21] border border-[#2a3942] rounded-lg text-xs text-[#e9edef] focus:outline-none focus:border-[#00a884]"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs text-[#8696a0] mb-1 font-medium">תוכן ההודעה המלאה *</label>
+                  <textarea
+                    value={newQrText}
+                    onChange={(e) => setNewQrText(e.target.value)}
+                    placeholder="הקלד את ההודעה שתשלח... ניתן לשלב *הדגשה*, _נטוי_, ולינקים כגון https://waze.com/..."
+                    rows={3}
+                    className="w-full p-3 bg-[#111b21] border border-[#2a3942] rounded-lg text-xs text-[#e9edef] focus:outline-none focus:border-[#00a884] resize-y"
+                    required
+                  />
+                  <span className="text-[10px] text-[#8696a0] block mt-1">
+                    טיפ: תומך בפורמט WhatsApp מלא - *טקסט מודגש*, _נטוי_, וקישורים לחיצים ל-Waze או Google Maps.
+                  </span>
+                </div>
+
+                <div className="flex justify-end">
+                  <button
+                    type="submit"
+                    className="px-5 py-2.5 bg-[#00a884] hover:bg-[#008f70] text-[#111b21] font-bold text-xs rounded-xl shadow-lg flex items-center gap-2 active:scale-95 transition-all cursor-pointer"
+                  >
+                    <Plus className="w-4 h-4" />
+                    <span>שמור תגובה מהירה</span>
+                  </button>
+                </div>
+              </form>
+
+              {/* Saved Quick Replies List */}
+              <div className="bg-[#202c33] p-5 rounded-xl border border-[#2a3942] space-y-4">
+                <h3 className="text-sm font-bold text-[#e9edef] flex items-center gap-2">
+                  <MessageSquareQuote className="w-4 h-4 text-amber-400" />
+                  רשימת התגובות המהירות במערכת
+                </h3>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {(settings.quickReplies || DEFAULT_QUICK_REPLIES).map((qr) => (
+                    <div
+                      key={qr.id}
+                      className="bg-[#111b21] p-4 rounded-xl border border-[#2a3942] flex flex-col justify-between space-y-3 relative group hover:border-[#00a884]/60 transition-all"
+                    >
+                      <div className="space-y-2">
+                        <div className="flex items-start justify-between gap-2">
+                          <div>
+                            <h4 className="text-xs font-bold text-white flex items-center gap-2">
+                              <span>{qr.title}</span>
+                            </h4>
+                            <div className="flex items-center gap-1.5 mt-1">
+                              {qr.category && (
+                                <span className="text-[10px] bg-[#2a3942] text-[#8696a0] px-2 py-0.5 rounded-full">
+                                  {qr.category}
+                                </span>
+                              )}
+                              {qr.shortcut && (
+                                <span className="text-[10px] bg-amber-500/20 text-amber-300 font-mono px-2 py-0.5 rounded-full border border-amber-500/30">
+                                  /{qr.shortcut}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+
+                          <div className="flex items-center gap-1">
+                            <button
+                              onClick={() => handleCopyQrText(qr.id, qr.text)}
+                              className="p-1.5 rounded bg-[#182229] text-[#8696a0] hover:text-[#00a884] transition-colors cursor-pointer"
+                              title="העתק טקסט"
+                            >
+                              <Copy className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              onClick={() => handleDeleteQuickReply(qr.id)}
+                              className="p-1.5 rounded bg-[#182229] text-[#8696a0] hover:text-red-400 transition-colors cursor-pointer"
+                              title="מחק תגובה מהירה"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* Rendered WhatsApp Preview */}
+                        <div className="bg-[#005c4b]/30 p-3 rounded-lg border border-[#00a884]/30 text-xs text-[#e9edef] max-h-40 overflow-y-auto">
+                          <FormattedMessage text={qr.text} />
+                        </div>
+                      </div>
+
+                      {copiedQrId === qr.id && (
+                        <div className="text-[10px] text-emerald-400 font-bold flex items-center gap-1 dir-rtl">
+                          <CheckCircle className="w-3 h-3" />
+                          <span>הטקסט הועתק ללוח!</span>
+                        </div>
+                      )}
                     </div>
                   ))}
                 </div>

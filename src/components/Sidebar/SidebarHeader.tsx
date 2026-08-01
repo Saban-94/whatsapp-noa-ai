@@ -1,15 +1,17 @@
 import React, { useState } from 'react';
-import { MessageSquarePlus, MoreVertical, CircleDashed, Shield, Search, UserPlus } from 'lucide-react';
+import { MessageSquarePlus, MoreVertical, CircleDashed, Shield, UserPlus, DoorOpen } from 'lucide-react';
 
 interface SidebarHeaderProps {
   onOpenAdmin: () => void;
   onOpenNewChat: () => void;
+  onOpenGateway?: () => void;
   darkTheme: boolean;
 }
 
 export const SidebarHeader: React.FC<SidebarHeaderProps> = ({
   onOpenAdmin,
   onOpenNewChat,
+  onOpenGateway,
   darkTheme,
 }) => {
   const [showMenu, setShowMenu] = useState(false);
@@ -56,7 +58,18 @@ export const SidebarHeader: React.FC<SidebarHeaderProps> = ({
       </div>
 
       {/* Action Icons */}
-      <div className="flex items-center gap-2 text-[#aebac1]">
+      <div className="flex items-center gap-1.5 text-[#aebac1]">
+        {/* Gateway Splash Door Button */}
+        {onOpenGateway && (
+          <button
+            onClick={onOpenGateway}
+            className="p-2 rounded-full hover:bg-[#374248]/50 transition-colors text-amber-400 hover:text-amber-300 relative group"
+            title="שער כניסה ואפקט דלתות (Gateway)"
+          >
+            <DoorOpen className="w-5 h-5 group-hover:scale-110 transition-transform" />
+          </button>
+        )}
+
         {/* Hidden Admin Shortcut Button */}
         <button
           onClick={onOpenAdmin}
@@ -114,6 +127,15 @@ export const SidebarHeader: React.FC<SidebarHeaderProps> = ({
                 <span>צ'אט חדש</span>
                 <UserPlus className="w-4 h-4" />
               </button>
+              {onOpenGateway && (
+                <button
+                  onClick={onOpenGateway}
+                  className="w-full text-right px-4 py-2.5 hover:bg-[#182229] flex items-center justify-between text-amber-400 font-medium"
+                >
+                  <span>שער כניסה ואפקט דלתות</span>
+                  <DoorOpen className="w-4 h-4" />
+                </button>
+              )}
               <div className="my-1 border-t border-[#2a3942]" />
               <button
                 onClick={onOpenAdmin}

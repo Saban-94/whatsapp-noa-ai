@@ -34,6 +34,7 @@ export interface Contact {
   unreadCount: number;
   labels?: string[];
   notes?: string;
+  blueTicksOverride?: 'global' | 'enabled' | 'disabled';
 }
 
 export interface Chat {
@@ -53,6 +54,14 @@ export interface KnowledgeItem {
   updatedAt: string;
 }
 
+export interface QuickReply {
+  id: string;
+  title: string;
+  text: string;
+  shortcut?: string;
+  category?: string;
+}
+
 export interface AdminSettings {
   systemPrompt: string;
   webAppUrl: string;
@@ -70,6 +79,7 @@ export interface AdminSettings {
   businessDays?: number[];
   outsideHoursMode?: 'silent' | 'out_of_office_msg';
   outsideHoursMessage?: string;
+  quickReplies?: QuickReply[];
 }
 
 export interface WebhookLog {

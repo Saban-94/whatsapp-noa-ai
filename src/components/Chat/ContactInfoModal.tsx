@@ -1,5 +1,5 @@
 import React from 'react';
-import { X, Phone, Bot, Pin, BellOff, ShieldAlert, Tag, Edit3 } from 'lucide-react';
+import { X, Phone, Bot, Pin, BellOff, ShieldAlert, Tag, Edit3, CheckCheck, Check } from 'lucide-react';
 import { Contact } from '../../types';
 
 interface ContactInfoModalProps {
@@ -8,6 +8,8 @@ interface ContactInfoModalProps {
   onClose: () => void;
   onToggleAi: () => void;
   onTogglePin: () => void;
+  onUpdateContactBlueTicks?: (override: 'global' | 'enabled' | 'disabled') => void;
+  globalBlueTicks?: boolean;
   darkTheme: boolean;
 }
 
@@ -17,9 +19,14 @@ export const ContactInfoModal: React.FC<ContactInfoModalProps> = ({
   onClose,
   onToggleAi,
   onTogglePin,
+  onUpdateContactBlueTicks,
+  globalBlueTicks = true,
   darkTheme,
 }) => {
   if (!isOpen || !contact) return null;
+
+  const currentOverride = contact.blueTicksOverride || 'global';
+  const isEffectiveBlue = currentOverride === 'enabled' ? true : currentOverride === 'disabled' ? false : globalBlueTicks;
 
   return (
     <div className={`w-80 h-full border-r flex flex-col z-20 transition-all ${
@@ -71,11 +78,83 @@ export const ContactInfoModal: React.FC<ContactInfoModalProps> = ({
           </p>
         </div>
 
+        {/* Read Receipts (Blue Ticks) Override Settings */}
+        <div className="bg-[#202c33] p-3.5 rounded-xl border border-[#2a3942] space-y-3">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-semibold flex items-center gap-2 text-[#53bdeb]">
+              <CheckCheck className="w-4 h-4" />
+              הגדרת אישורי קריאה (וי כחול)
+            </span>
+            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1 ${
+              isEffectiveBlue ? 'bg-[#53bdeb]/20 text-[#53bdeb] border border-[#53bdeb]/40' : 'bg-[#182229] text-[#8696a0] border border-[#2a3942]'
+            }`}>
+              {isEffectiveBlue ? (
+                <>
+                  <CheckCheck className="w-3 h-3 text-[#53bdeb]" />
+                  <span>וי כחול פעיל</span>
+                </>
+              ) : (
+                <>
+                  <Check className="w-3 h-3 text-[#8696a0]" />
+                  <span>אפור בלבד</span>
+                </>
+              )}
+            </span>
+          </div>
+
+          <p className="text-[11px] text-[#8696a0] leading-snug">
+            הגדר האם הודעות שנקרות מאיש קשר זה יציגו סימון 'וי כחול' או יישארו אפורות בלבד.
+          </p>
+
+          <div className="space-y-2 text-xs pt-1">
+            <label className="flex items-center gap-2 cursor-pointer p-2 rounded-lg hover:bg-[#182229] border border-transparent hover:border-[#2a3942] transition-all">
+              <input
+                type="radio"
+                name="blueTicksOverride"
+                checked={currentOverride === 'global'}
+                onChange={() => onUpdateContactBlueTicks?.('global')}
+                className="accent-[#00a884] cursor-pointer"
+              />
+              <span className="text-[#e9edef] text-xs">
+                ברירת מחדל גלובלית ({globalBlueTicks ? 'וי כחול מופעל' : 'וי כחול מושבת'})
+              </span>
+            </label>
+
+            <label className="flex items-center gap-2 cursor-pointer p-2 rounded-lg hover:bg-[#182229] border border-transparent hover:border-[#2a3942] transition-all">
+              <input
+                type="radio"
+                name="blueTicksOverride"
+                checked={currentOverride === 'enabled'}
+                onChange={() => onUpdateContactBlueTicks?.('enabled')}
+                className="accent-[#00a884] cursor-pointer"
+              />
+              <span className="text-[#53bdeb] font-semibold text-xs flex items-center gap-1">
+                <CheckCheck className="w-3.5 h-3.5 text-[#53bdeb]" />
+                הפעל וי כחול תמיד עבור איש קשר זה
+              </span>
+            </label>
+
+            <label className="flex items-center gap-2 cursor-pointer p-2 rounded-lg hover:bg-[#182229] border border-transparent hover:border-[#2a3942] transition-all">
+              <input
+                type="radio"
+                name="blueTicksOverride"
+                checked={currentOverride === 'disabled'}
+                onChange={() => onUpdateContactBlueTicks?.('disabled')}
+                className="accent-[#00a884] cursor-pointer"
+              />
+              <span className="text-[#8696a0] font-medium text-xs flex items-center gap-1">
+                <Check className="w-3.5 h-3.5 text-[#8696a0]" />
+                בטל וי כחול (אפור בלבד) עבור איש קשר זה
+              </span>
+            </label>
+          </div>
+        </div>
+
         {/* Quick Action Toggles */}
         <div className="space-y-1">
           <button
             onClick={onTogglePin}
-            className="w-full flex items-center justify-between p-3 rounded-lg hover:bg-[#202c33] text-sm text-right"
+            className="w-full flex items-center justify-between p-3 rounded-lg hover:bg-[#202c33] text-sm text-right cursor-pointer"
           >
             <span className="flex items-center gap-3">
               <Pin className="w-4 h-4 text-[#8696a0]" />
@@ -86,7 +165,7 @@ export const ContactInfoModal: React.FC<ContactInfoModalProps> = ({
             </span>
           </button>
 
-          <button className="w-full flex items-center justify-between p-3 rounded-lg hover:bg-[#202c33] text-sm text-right">
+          <button className="w-full flex items-center justify-between p-3 rounded-lg hover:bg-[#202c33] text-sm text-right cursor-pointer">
             <span className="flex items-center gap-3">
               <BellOff className="w-4 h-4 text-[#8696a0]" />
               השתק התראות

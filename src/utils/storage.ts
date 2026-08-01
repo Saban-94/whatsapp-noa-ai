@@ -1,5 +1,5 @@
 import { Chat, KnowledgeItem, AdminSettings, WebhookLog } from '../types';
-import { INITIAL_CHATS, INITIAL_KNOWLEDGE_BASE, INITIAL_SETTINGS } from '../data/mockData';
+import { INITIAL_CHATS, INITIAL_KNOWLEDGE_BASE, INITIAL_SETTINGS, DEFAULT_QUICK_REPLIES } from '../data/mockData';
 
 const STORAGE_KEYS = {
   CHATS: 'sabanos_wa_chats_v1',
@@ -11,7 +11,22 @@ const STORAGE_KEYS = {
 export function loadStoredChats(): Chat[] {
   try {
     const data = localStorage.getItem(STORAGE_KEYS.CHATS);
-    if (data) return JSON.parse(data);
+    if (data) {
+      const parsed: Chat[] = JSON.parse(data);
+      // Migrate Noa AI avatar if it's using the old unsplash URL
+      return parsed.map((c) => {
+        if (c.id === 'chat_noa_ai' || c.contact.id === 'c_noa') {
+          return {
+            ...c,
+            contact: {
+              ...c.contact,
+              avatar: 'https://i.ibb.co/Zz6H1zth/1785576538638.png',
+            },
+          };
+        }
+        return c;
+      });
+    }
   } catch (e) {
     console.error('Error loading chats from storage:', e);
   }
@@ -29,7 +44,13 @@ export function saveStoredChats(chats: Chat[]) {
 export function loadStoredSettings(): AdminSettings {
   try {
     const data = localStorage.getItem(STORAGE_KEYS.SETTINGS);
-    if (data) return JSON.parse(data);
+    if (data) {
+      const parsed: AdminSettings = JSON.parse(data);
+      if (!parsed.quickReplies || parsed.quickReplies.length === 0) {
+        parsed.quickReplies = DEFAULT_QUICK_REPLIES;
+      }
+      return parsed;
+    }
   } catch (e) {
     console.error('Error loading settings:', e);
   }
