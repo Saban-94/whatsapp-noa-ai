@@ -1,0 +1,482 @@
+import React, { useState, useEffect, useTransition } from 'react';
+import {
+  loadStoredChats,
+  saveStoredChats,
+  loadStoredSettings,
+  saveStoredSettings,
+  loadStoredKnowledgeBase,
+  saveStoredKnowledgeBase,
+  loadStoredLogs,
+  saveStoredLogs,
+  resetAllData,
+} from './utils/storage';
+import { Chat, KnowledgeItem, AdminSettings, WebhookLog, ChatFilter, Message } from './types';
+import { SidebarHeader } from './components/Sidebar/SidebarHeader';
+import { SearchBar } from './components/Sidebar/SearchBar';
+import { ChatList } from './components/Sidebar/ChatList';
+import { NewChatModal } from './components/Sidebar/NewChatModal';
+import { ChatHeader } from './components/Chat/ChatHeader';
+import { MessageList } from './components/Chat/MessageList';
+import { MessageInput } from './components/Chat/MessageInput';
+import { ContactInfoModal } from './components/Chat/ContactInfoModal';
+import { AdminModal } from './components/Admin/AdminModal';
+import { playWhatsAppIncomingSound, playWhatsAppOutgoingSound } from './utils/audio';
+
+export default function App() {
+  const [chats, setChats] = useState<Chat[]>(loadStoredChats);
+  const [settings, setSettings] = useState<AdminSettings>(loadStoredSettings);
+  const [knowledgeBase, setKnowledgeBase] = useState<KnowledgeItem[]>(loadStoredKnowledgeBase);
+  const [webhookLogs, setWebhookLogs] = useState<WebhookLog[]>(loadStoredLogs);
+
+  const [activeChatId, setActiveChatId] = useState<string>(chats[0]?.id || 'chat_noa_ai');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [activeFilter, setActiveFilter] = useState<ChatFilter>('all');
+  
+  const [isAdminOpen, setIsAdminOpen] = useState(false);
+  const [isNewChatOpen, setIsNewChatOpen] = useState(false);
+  const [isContactInfoOpen, setIsContactInfoOpen] = useState(false);
+  const [isTyping, setIsTyping] = useState(false);
+  const [mobileShowChat, setMobileShowChat] = useState(false);
+
+  // Sync state to LocalStorage
+  useEffect(() => {
+    saveStoredChats(chats);
+  }, [chats]);
+
+  useEffect(() => {
+    saveStoredSettings(settings);
+  }, [settings]);
+
+  useEffect(() => {
+    saveStoredKnowledgeBase(knowledgeBase);
+  }, [knowledgeBase]);
+
+  useEffect(() => {
+    saveStoredLogs(webhookLogs);
+  }, [webhookLogs]);
+
+  // Global Keyboard Listener for Hidden Admin Dashboard (Ctrl+Shift+A or Cmd+Shift+A)
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.shiftKey && (e.key === 'A' || e.key === 'a' || e.key === 'ש')) {
+        e.preventDefault();
+        setIsAdminOpen((prev) => !prev);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
+
+  const activeChat = chats.find((c) => c.id === activeChatId) || chats[0];
+
+  // Filtering chats based on search and tab chips
+  const filteredChats = chats.filter((chat) => {
+    const nameMatch = chat.contact.name.toLowerCase().includes(searchQuery.toLowerCase());
+    const phoneMatch = chat.contact.phone.includes(searchQuery);
+    const textMatch = chat.messages.some((m) => m.text.toLowerCase().includes(searchQuery.toLowerCase()));
+    
+    if (!(nameMatch || phoneMatch || textMatch)) return false;
+
+    if (activeFilter === 'unread') return chat.contact.unreadCount > 0;
+    if (activeFilter === 'favorites') return chat.contact.isPinned;
+    if (activeFilter === 'groups') return chat.contact.phone.includes('קבוצה');
+
+    return true;
+  });
+
+  // Select Chat handler
+  const handleSelectChat = (chatId: string) => {
+    setActiveChatId(chatId);
+    setMobileShowChat(true);
+    
+    // Clear unread count
+    setChats((prev) =>
+      prev.map((c) =>
+        c.id === chatId ? { ...c, contact: { ...c.contact, unreadCount: 0 } } : c
+      )
+    );
+  };
+
+  // Toggle AI for current contact
+  const handleToggleAiForContact = () => {
+    if (!activeChat) return;
+    setChats((prev) =>
+      prev.map((c) =>
+        c.id === activeChat.id
+          ? { ...c, contact: { ...c.contact, isAiManaged: !c.contact.isAiManaged } }
+          : c
+      )
+    );
+  };
+
+  // Toggle Pin for current contact
+  const handleTogglePinContact = () => {
+    if (!activeChat) return;
+    setChats((prev) =>
+      prev.map((c) =>
+        c.id === activeChat.id
+          ? { ...c, contact: { ...c.contact, isPinned: !c.contact.isPinned } }
+          : c
+      )
+    );
+  };
+
+  // Create new chat
+  const handleCreateChat = (name: string, phone: string, isAiManaged: boolean) => {
+    const newChatId = `chat_${Date.now()}`;
+    const newChat: Chat = {
+      id: newChatId,
+      updatedAt: new Date().toISOString(),
+      contact: {
+        id: `c_${Date.now()}`,
+        name,
+        phone,
+        avatar: `https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150&auto=format&fit=crop&q=80`,
+        isOnline: true,
+        isAiManaged,
+        unreadCount: 0,
+      },
+      messages: [
+        {
+          id: `m_init_${Date.now()}`,
+          chatId: newChatId,
+          sender: 'ai',
+          text: `שלום ${name}! שמי נועה AI מסאבאן. במה אוכל לעזור לך היום?`,
+          timestamp: new Date().toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' }),
+          status: 'read',
+        },
+      ],
+    };
+
+    setChats((prev) => [newChat, ...prev]);
+    setActiveChatId(newChatId);
+    setMobileShowChat(true);
+  };
+
+  // Business hours evaluator helper
+  const isWithinBusinessHours = (s: AdminSettings): boolean => {
+    if (!s.businessHoursEnabled) return true;
+
+    const now = new Date();
+    const currentDay = now.getDay(); // 0 = Sun, 1 = Mon ... 6 = Sat
+    const activeDays = s.businessDays ?? [0, 1, 2, 3, 4];
+    if (!activeDays.includes(currentDay)) return false;
+
+    const start = s.businessHoursStart || '08:00';
+    const end = s.businessHoursEnd || '18:00';
+    const currentMinutes = now.getHours() * 60 + now.getMinutes();
+
+    const [sH, sM] = start.split(':').map(Number);
+    const startMinutes = (sH || 0) * 60 + (sM || 0);
+
+    const [eH, eM] = end.split(':').map(Number);
+    const endMinutes = (eH || 0) * 60 + (eM || 0);
+
+    if (startMinutes <= endMinutes) {
+      return currentMinutes >= startMinutes && currentMinutes <= endMinutes;
+    } else {
+      return currentMinutes >= startMinutes || currentMinutes <= endMinutes;
+    }
+  };
+
+  // Send Message & trigger AI simulation or Webhook
+  const handleSendMessage = async (
+    text: string,
+    type: 'text' | 'image' | 'document' | 'voice_note' = 'text',
+    mediaUrl?: string
+  ) => {
+    if (!activeChat) return;
+
+    const timeStr = new Date().toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' });
+    const userMsg: Message = {
+      id: `msg_${Date.now()}`,
+      chatId: activeChat.id,
+      sender: 'user',
+      text,
+      timestamp: timeStr,
+      status: 'delivered',
+      type,
+      mediaUrl,
+      isVoiceNote: type === 'voice_note',
+      audioDuration: type === 'voice_note' ? '0:12' : undefined,
+    };
+
+    // Play outgoing sound
+    playWhatsAppOutgoingSound();
+
+    // Append user message immediately
+    setChats((prev) =>
+      prev.map((c) =>
+        c.id === activeChat.id
+          ? {
+              ...c,
+              updatedAt: new Date().toISOString(),
+              messages: [...c.messages, userMsg],
+            }
+          : c
+      )
+    );
+
+    // If contact is AI managed & auto-reply is enabled in settings
+    if (activeChat.contact.isAiManaged && settings.autoReplyEnabled) {
+      const inBusinessHours = isWithinBusinessHours(settings);
+
+      if (!inBusinessHours) {
+        // Outside business hours behavior
+        if (settings.outsideHoursMode === 'silent') {
+          return;
+        }
+
+        setIsTyping(true);
+        setTimeout(() => {
+          setIsTyping(false);
+
+          const outOfOfficeMsg: Message = {
+            id: `msg_ai_${Date.now()}`,
+            chatId: activeChat.id,
+            sender: 'ai',
+            text: settings.outsideHoursMessage || 'שלום! פנית אלינו מחוץ לשעות הפעילות (08:00 - 18:00). הודעתך נקלטה במערכת SabanOS ונשוב אליך בהקדם בשעות הפעילות! ⏰',
+            timestamp: new Date().toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' }),
+            status: 'read',
+          };
+
+          setChats((prev) =>
+            prev.map((c) =>
+              c.id === activeChat.id
+                ? {
+                    ...c,
+                    messages: c.messages.map((m) => (m.id === userMsg.id ? { ...m, status: 'read' } : m)).concat(outOfOfficeMsg),
+                  }
+                : c
+            )
+          );
+
+          playWhatsAppIncomingSound();
+        }, settings.typingDelayMs || 1200);
+
+        return;
+      }
+
+      setIsTyping(true);
+
+      try {
+        // Send request to server endpoint /api/chat/respond
+        const res = await fetch('/api/chat/respond', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            chatId: activeChat.id,
+            contactName: activeChat.contact.name,
+            userMessage: text,
+            conversationHistory: activeChat.messages,
+            systemPrompt: settings.systemPrompt,
+            knowledgeBase: knowledgeBase,
+          }),
+        });
+
+        const data = await res.json();
+        const replyText = data.text || 'קיבלתי את הודעתך, אשמח לעזור!';
+
+        setTimeout(() => {
+          setIsTyping(false);
+
+          const aiMsg: Message = {
+            id: `msg_ai_${Date.now()}`,
+            chatId: activeChat.id,
+            sender: 'ai',
+            text: replyText,
+            timestamp: new Date().toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' }),
+            status: 'read',
+          };
+
+          // Update messages and set user msg status to read
+          setChats((prev) =>
+            prev.map((c) =>
+              c.id === activeChat.id
+                ? {
+                    ...c,
+                    messages: c.messages.map((m) => (m.id === userMsg.id ? { ...m, status: 'read' } : m)).concat(aiMsg),
+                  }
+                : c
+            )
+          );
+
+          // Play incoming sound effect
+          playWhatsAppIncomingSound();
+        }, settings.typingDelayMs || 1200);
+
+      } catch (err) {
+        console.error('Error fetching AI response:', err);
+        setIsTyping(false);
+      }
+    }
+  };
+
+  // Human Operator Manual Intervention / Override Message
+  const handleSendHumanOverrideMessage = (chatId: string, text: string) => {
+    const timeStr = new Date().toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' });
+    const overrideMsg: Message = {
+      id: `msg_override_${Date.now()}`,
+      chatId,
+      sender: 'agent',
+      text: `[תגובת נציג מנהל]: ${text}`,
+      timestamp: timeStr,
+      status: 'read',
+    };
+
+    setChats((prev) =>
+      prev.map((c) =>
+        c.id === chatId
+          ? {
+              ...c,
+              messages: [...c.messages, overrideMsg],
+            }
+          : c
+      )
+    );
+
+    playWhatsAppOutgoingSound();
+  };
+
+  // Webhook Test Call
+  const handleTestWebhook = async () => {
+    const res = await fetch('/api/webhook/google-script', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        url: settings.webAppUrl,
+        payload: {
+          action: 'test_ping',
+          source: 'SabanOS_Admin_Panel',
+          timestamp: new Date().toISOString(),
+        },
+      }),
+    });
+
+    const data = await res.json();
+    if (data.log) {
+      setWebhookLogs((prev) => [...prev, data.log]);
+    }
+    if (!res.ok) throw new Error(data.error || 'Server error');
+  };
+
+  // Reset All Data
+  const handleResetData = () => {
+    if (confirm('האם אתה בטוח שברצונך לאפס את כל הנתונים והשיחות?')) {
+      resetAllData();
+      window.location.reload();
+    }
+  };
+
+  return (
+    <div className="h-screen w-screen flex items-center justify-center bg-[#090e11] font-['Heebo','Rubik',sans-serif] text-[#e9edef] overflow-hidden select-none">
+      
+      {/* Outer App Frame Container (Simulates WhatsApp Web Green Header Stripe on Big Screens) */}
+      <div className="w-full h-full lg:p-4 max-w-[1600px] flex">
+        <div className="w-full h-full bg-[#111b21] rounded-none lg:rounded-xl shadow-2xl border border-[#222d34] flex overflow-hidden relative">
+
+          {/* SIDEBAR (Contacts & Chats) */}
+          <div className={`w-full md:w-[380px] lg:w-[420px] flex flex-col border-l border-[#222d34] bg-[#111b21] shrink-0 ${
+            mobileShowChat ? 'hidden md:flex' : 'flex'
+          }`}>
+            <SidebarHeader
+              onOpenAdmin={() => setIsAdminOpen(true)}
+              onOpenNewChat={() => setIsNewChatOpen(true)}
+              darkTheme={settings.darkTheme}
+            />
+            <SearchBar
+              searchQuery={searchQuery}
+              onSearchChange={setSearchQuery}
+              activeFilter={activeFilter}
+              onFilterChange={setActiveFilter}
+              darkTheme={settings.darkTheme}
+            />
+            <ChatList
+              chats={filteredChats}
+              activeChatId={activeChatId}
+              onSelectChat={handleSelectChat}
+              darkTheme={settings.darkTheme}
+              enableBlueTicks={settings.enableBlueTicks}
+            />
+          </div>
+
+          {/* MAIN CHAT AREA */}
+          {activeChat ? (
+            <div className={`flex-1 flex flex-col min-w-0 bg-[#0b141a] relative ${
+              !mobileShowChat ? 'hidden md:flex' : 'flex'
+            }`}>
+              <ChatHeader
+                contact={activeChat.contact}
+                isTyping={isTyping}
+                onBackMobile={() => setMobileShowChat(false)}
+                onOpenContactInfo={() => setIsContactInfoOpen(!isContactInfoOpen)}
+                onToggleAi={handleToggleAiForContact}
+                darkTheme={settings.darkTheme}
+              />
+              
+              <div className="flex-1 flex min-h-0 relative">
+                <div className="flex-1 flex flex-col min-w-0 h-full">
+                  <MessageList
+                    messages={activeChat.messages}
+                    darkTheme={settings.darkTheme}
+                    contactName={activeChat.contact.name}
+                    enableBlueTicks={settings.enableBlueTicks}
+                  />
+                  <MessageInput
+                    onSendMessage={handleSendMessage}
+                    darkTheme={settings.darkTheme}
+                    isAiManaged={activeChat.contact.isAiManaged}
+                  />
+                </div>
+
+                {/* Contact Detail Modal Drawer */}
+                <ContactInfoModal
+                  contact={activeChat.contact}
+                  isOpen={isContactInfoOpen}
+                  onClose={() => setIsContactInfoOpen(false)}
+                  onToggleAi={handleToggleAiForContact}
+                  onTogglePin={handleTogglePinContact}
+                  darkTheme={settings.darkTheme}
+                />
+              </div>
+            </div>
+          ) : (
+            <div className="hidden md:flex flex-1 flex-col items-center justify-center p-8 text-center text-[#8696a0] whatsapp-chat-bg-dark border-b-8 border-[#00a884]">
+              <div className="w-16 h-16 rounded-full bg-[#00a884]/20 flex items-center justify-center text-[#00a884] mb-4">
+                <span className="text-2xl font-bold">WA</span>
+              </div>
+              <h2 className="text-xl font-bold text-[#e9edef] mb-2">WhatsApp Web - SabanOS</h2>
+              <p className="text-sm max-w-md">
+                שלח והקבל הודעות בזמן אמת בסנכרון מול Noa AI וה-Google Apps Script Web App.
+              </p>
+            </div>
+          )}
+
+        </div>
+      </div>
+
+      {/* NEW CHAT MODAL */}
+      <NewChatModal
+        isOpen={isNewChatOpen}
+        onClose={() => setIsNewChatOpen(false)}
+        onCreateChat={handleCreateChat}
+      />
+
+      {/* HIDDEN ADMIN DASHBOARD MODAL */}
+      <AdminModal
+        isOpen={isAdminOpen}
+        onClose={() => setIsAdminOpen(false)}
+        chats={chats}
+        settings={settings}
+        onUpdateSettings={setSettings}
+        knowledgeBase={knowledgeBase}
+        onUpdateKnowledgeBase={setKnowledgeBase}
+        webhookLogs={webhookLogs}
+        onSendHumanOverrideMessage={handleSendHumanOverrideMessage}
+        onTestWebhook={handleTestWebhook}
+        onResetData={handleResetData}
+      />
+
+    </div>
+  );
+}

@@ -1,0 +1,6 @@
+{
+  "name": "נועה AI & SabanOS WhatsApp",
+  "description": "שכפול WhatsApp Web מושלם 1:1 בעברית עם Noa AI / SabanOS, סנכרון Webhook ולוח בקרה אדמיניסטרטיבי נסתר",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
