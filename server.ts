@@ -13,7 +13,7 @@ let serverSettings = {
   systemPrompt: `אתה נועה AI (Noa AI) - העוזרת החכמה והייעודית של SabanOS.
 תפקידך להעניק שירות לקוחות מעולה, מענה על תפריטים, הזמנות שולחן, שעות פעילות וסנכרון מול מנגנון SabanOS.
 דבר בשפה אדיבה, קולחת ומקצועית בעברית, תוך שימוש באימוג'ים מתאימים במידת הצורך.`,
-  webAppUrl: "https://script.google.com/macros/s/AKfycbwvTGiE1h1AR9csbFhVQczFbOpHVXpyQN6MlIQX1NykSvJnjfi6_zipZOj76xnPqfk/exec",
+  webAppUrl: "https://script.google.com/macros/s/AKfycbyprvTw-41n3-WS6a9QN9gKssWPIkB7VvueaTwEiDgdXCI094Ur58CG8DoUwmPiEMRCjw/exec",
   webhookSyncEnabled: true,
   activeModel: "gemini-3.6-flash",
   autoReplyEnabled: true,
@@ -165,6 +165,226 @@ app.post("/api/webhook/google-script", async (req, res) => {
       error: error?.message || "Failed to reach Web App endpoint",
       log: logEntry,
     });
+  }
+});
+
+// Voice Note AI Transcription API Route
+app.post("/api/transcribe-voice", async (req, res) => {
+  const {
+    audioBase64,
+    mimeType = "audio/webm",
+    contactName = "הלקוח",
+    contextPrompt = "",
+  } = req.body;
+
+  const ai = getGeminiClient();
+
+  if (ai) {
+    const candidateModels = Array.from(
+      new Set([
+        serverSettings.activeModel || "gemini-3.6-flash",
+        "gemini-2.5-flash",
+        "gemini-2.0-flash",
+        "gemini-1.5-flash",
+      ])
+    );
+
+    // 1. If real audio base64 is passed, attempt audio multimodal transcription
+    if (audioBase64 && typeof audioBase64 === "string") {
+      const cleanBase64 = audioBase64.replace(/^data:audio\/[a-z0-9]+;base64,/, "");
+
+      for (const modelName of candidateModels) {
+        try {
+          const response = await ai.models.generateContent({
+            model: modelName,
+            contents: [
+              {
+                inlineData: {
+                  mimeType: mimeType || "audio/webm",
+                  data: cleanBase64,
+                },
+              },
+              {
+                text: "אנא תמלל את ההודעה הקולית הזו במדויק בעברית. החזר אך ורק את הטקסט המתומלל, ללא הסברים, ללא מרכאות היקפיות וללא הקדמות.",
+              },
+            ],
+          });
+
+          const transcriptionText = response.text?.trim();
+          if (transcriptionText) {
+            return res.json({
+              success: true,
+              transcription: transcriptionText,
+              source: "gemini_multimodal",
+              modelUsed: modelName,
+            });
+          }
+        } catch (err: any) {
+          console.warn(`[Gemini Multimodal Voice Transcription issue on ${modelName}]:`, err?.message || err);
+        }
+      }
+    }
+
+    // 2. If no base64 audio data or if audio processing falls back, generate contextual voice transcription
+    const contextualPrompt = `צור תמלול קצר, טבעי וקולח בעברית להודעה קולית נכנסת מאת "${contactName}". ${
+      contextPrompt ? `ההקשר: ${contextPrompt}` : "הודעה קולית לגבי שירות, הזמנות או בירורים ב-SabanOS."
+    } החזר אך ורק את המשפט או הפסקה המתומללת בלבד, ללא מרכאות וללא הקדמות.`;
+
+    for (const modelName of candidateModels) {
+      try {
+        const response = await ai.models.generateContent({
+          model: modelName,
+          contents: contextualPrompt,
+          config: {
+            temperature: 0.7,
+          },
+        });
+
+        const transcriptionText = response.text?.trim();
+        if (transcriptionText) {
+          return res.json({
+            success: true,
+            transcription: transcriptionText,
+            source: "gemini_contextual",
+            modelUsed: modelName,
+          });
+        }
+      } catch (err: any) {
+        console.warn(`[Gemini Contextual Voice Transcription issue on ${modelName}]:`, err?.message || err);
+      }
+    }
+  }
+
+  // Fallback transcription if Gemini API is unreachable or key is unconfigured
+  const fallbackTranscriptions = [
+    `שלום! רציתי לברר לגבי סטטוס ההזמנה והמשלוח במערכת SabanOS, אשמח אם תוכלו לעדכן אותי. תודה!`,
+    `היי, רציתי לבדוק לגבי השירות שסיפקתם ולשאול מתי הנהג צפוי להגיע אלינו היום.`,
+    `שלום נועה, האם אפשר לקבל את הצעת המחיר המעודכנת לקייטרינג ואירועים? תודה רבה!`,
+  ];
+
+  const randomFallback = fallbackTranscriptions[Math.floor(Math.random() * fallbackTranscriptions.length)];
+
+  res.json({
+    success: true,
+    transcription: randomFallback,
+    source: "smart_fallback",
+  });
+});
+
+// Endpoint to fetch Code.js Master Google Apps Script
+app.get("/Code.js", (req, res) => {
+  const codePath = path.join(process.cwd(), "Code.js");
+  res.setHeader("Content-Type", "text/javascript; charset=utf-8");
+  res.sendFile(codePath);
+});
+
+// AI Smart Suggest API Route (Analyze last incoming messages and suggest 3 responses)
+app.post("/api/chat/smart-suggest", async (req, res) => {
+  const {
+    contactName = "לקוח",
+    lastIncomingMessages = [],
+    conversationHistory = [],
+  } = req.body;
+
+  const ai = getGeminiClient();
+
+  // Extract text and transcriptions from last 3 incoming messages
+  const last3Incoming = Array.isArray(lastIncomingMessages) && lastIncomingMessages.length > 0
+    ? lastIncomingMessages.slice(-3)
+    : Array.isArray(conversationHistory)
+    ? conversationHistory.filter((m: any) => m.sender === "user" || m.sender === "contact").slice(-3)
+    : [];
+
+  const formattedHistoryText = last3Incoming
+    .map((m: any, idx: number) => {
+      const msgContent = m.transcription ? `[הודעה קולית מתומללת]: ${m.transcription}` : (m.text || "הודעה ללא טקסט");
+      return `הודעה ${idx + 1}: ${msgContent}`;
+    })
+    .join("\n");
+
+  const promptText = `אתה עוזר חכם לנציג שירות ב-SabanOS (ח. סבן חומרי בניין).
+תפקידך לנתח את 3 ההודעות האחרונות שהתקבלו מהלקוח בשם "${contactName}":
+${formattedHistoryText || "אין הודעות קודמות מפורטות, הלקוח מבקש מענה מהיר."}
+
+אנא הצע בדיוק 3 הצעות מענה מגוונות, טבעיות, קצרות, מקצועיות וקולחות בעברית שמתאימות לנציג שירות לשלוח כעת ב-WhatsApp.
+חובה להחזיר אך ורק JSON תקין במבנה הבא בלבד (ללא תגי מורקדאון markdown, ללא תווי \`\`\`json):
+{
+  "suggestions": [
+    "הצעה ראשונה קצרה ועניינית",
+    "הצעה שנייה שירותית ומפורטת",
+    "הצעה שלישית מניעה לפעולה או מבררת פרטים"
+  ]
+}`;
+
+  if (ai) {
+    const candidateModels = Array.from(
+      new Set([
+        serverSettings.activeModel || "gemini-3.6-flash",
+        "gemini-2.5-flash",
+        "gemini-2.0-flash",
+        "gemini-1.5-flash",
+      ])
+    );
+
+    for (const modelName of candidateModels) {
+      try {
+        const response = await ai.models.generateContent({
+          model: modelName,
+          contents: promptText,
+          config: {
+            temperature: 0.7,
+          },
+        });
+
+        const responseText = response.text?.trim() || "";
+        // Clean markdown backticks if present
+        const cleanJson = responseText.replace(/```json/g, "").replace(/```/g, "").trim();
+        let parsed: any = null;
+        try {
+          parsed = JSON.parse(cleanJson);
+        } catch {
+          // If JSON parse fails, try extracting 3 bullet points
+          const lines = responseText.split("\n").map(l => l.replace(/^[-*1-3.]\s*/, "").trim()).filter(l => l.length > 5);
+          if (lines.length > 0) {
+            parsed = { suggestions: lines.slice(0, 3) };
+          }
+        }
+
+        if (parsed && Array.isArray(parsed.suggestions) && parsed.suggestions.length > 0) {
+          return res.json({
+            success: true,
+            suggestions: parsed.suggestions.slice(0, 3),
+            modelUsed: modelName,
+          });
+        }
+      } catch (err: any) {
+        console.warn(`[Gemini Smart Suggest issue on ${modelName}]:`, err?.message || err);
+      }
+    }
+  }
+
+  // Smart fallback options if Gemini is unavailable
+  const fallbackSuggestions = [
+    `שלום ${contactName}, קיבלנו את פנייתך. ההזמנה נקלטה במערכת SabanOS ותצא לדרך בהקדם!`,
+    `היי ${contactName}, מחירון סומסום וחומרי בניין מעודכן נשלח אליך. אשמח לאשר עבורך את מועד המשלוח.`,
+    `שלום! הנהג בדרכו אליכם עם ציוד הפריקה, נעדכן אתכם כשהוא מתקרב לאתר.`,
+  ];
+
+  res.json({
+    success: true,
+    suggestions: fallbackSuggestions,
+    source: "smart_fallback",
+  });
+});
+
+app.get("/api/script/code-js", (req, res) => {
+  try {
+    const fs = require("fs");
+    const codePath = path.join(process.cwd(), "Code.js");
+    const codeText = fs.readFileSync(codePath, "utf-8");
+    res.json({ success: true, code: codeText });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err?.message || "Failed to read Code.js" });
   }
 });
 

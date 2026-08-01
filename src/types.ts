@@ -17,6 +17,8 @@ export interface Message {
   audioDuration?: string;
   audioWaveform?: number[];
   isVoiceNote?: boolean;
+  transcription?: string;
+  isTranscribing?: boolean;
 }
 
 export interface Contact {

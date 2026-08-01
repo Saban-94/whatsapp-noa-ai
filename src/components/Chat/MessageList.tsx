@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Check, CheckCheck, FileText, Download, Bot, Maximize2 } from 'lucide-react';
+import { Check, CheckCheck, FileText, Download, Bot, Maximize2, Sparkles, Mic } from 'lucide-react';
 import { Message } from '../../types';
 import { WaveformPlayer } from './WaveformPlayer';
 import { FormattedMessage } from './FormattedMessage';
@@ -11,6 +11,7 @@ interface MessageListProps {
   contactName: string;
   enableBlueTicks?: boolean;
   chatId?: string;
+  onTranscribeVoiceNote?: (msgId: string) => void;
 }
 
 export const MessageList: React.FC<MessageListProps> = ({
@@ -19,6 +20,7 @@ export const MessageList: React.FC<MessageListProps> = ({
   contactName,
   enableBlueTicks = true,
   chatId,
+  onTranscribeVoiceNote,
 }) => {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -144,7 +146,64 @@ export const MessageList: React.FC<MessageListProps> = ({
               )}
 
               {msg.type === 'voice_note' || msg.isVoiceNote ? (
-                <WaveformPlayer duration={msg.audioDuration} isOutgoing={isUser} />
+                <div className="flex flex-col gap-1.5 min-w-[220px]">
+                  <WaveformPlayer duration={msg.audioDuration} isOutgoing={isUser} />
+
+                  {/* Voice Note Transcription Display Box */}
+                  {msg.isTranscribing ? (
+                    <div
+                      className={`mt-1.5 px-3 py-2 rounded-lg text-xs flex items-center gap-2 border animate-pulse ${
+                        isUser
+                          ? darkTheme
+                            ? 'bg-[#004a3c] border-[#005c4b] text-[#34d399]'
+                            : 'bg-[#c6f6d5] border-[#a3e635] text-[#15803d]'
+                          : darkTheme
+                          ? 'bg-[#182229] border-[#222d34] text-[#00a884]'
+                          : 'bg-slate-100 border-slate-200 text-[#00a884]'
+                      }`}
+                    >
+                      <Sparkles className="w-3.5 h-3.5 animate-spin text-amber-400 shrink-0" />
+                      <span className="font-medium text-[11px]">מתמלל הודעה קולית ב-AI (Gemini)...</span>
+                    </div>
+                  ) : msg.transcription ? (
+                    <div
+                      className={`mt-1.5 px-3 py-2 rounded-lg text-xs space-y-1.5 border shadow-2xs ${
+                        isUser
+                          ? darkTheme
+                            ? 'bg-[#004236]/90 border-[#00604f] text-[#e9edef]'
+                            : 'bg-[#cbf7c8]/90 border-[#a8e8a5] text-[#111b21]'
+                          : darkTheme
+                          ? 'bg-[#182229] border-[#2a3942] text-[#e9edef]'
+                          : 'bg-[#f0f2f5] border-[#e2e8f0] text-[#111b21]'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between text-[10px] font-bold text-[#00a884] border-b border-[#00a884]/20 pb-1">
+                        <span className="flex items-center gap-1.5">
+                          <FileText className="w-3.5 h-3.5 text-[#00a884]" />
+                          <span>תמלול הודעה קולית (Gemini AI)</span>
+                        </span>
+                        <span className="text-[9px] bg-[#00a884]/15 text-[#00a884] px-1.5 py-0.5 rounded-full font-mono">
+                          AI Transcribed
+                        </span>
+                      </div>
+                      <p className="text-[12px] leading-relaxed dir-rtl whitespace-pre-wrap font-sans text-right pt-0.5">
+                        "{msg.transcription}"
+                      </p>
+                    </div>
+                  ) : (
+                    <button
+                      onClick={() => onTranscribeVoiceNote?.(msg.id)}
+                      className={`mt-1 self-start px-2.5 py-1 rounded-md text-[11px] font-medium flex items-center gap-1.5 transition-all cursor-pointer border ${
+                        isUser
+                          ? 'bg-[#004a3c] hover:bg-[#005c4b] border-[#00604f] text-[#e9edef]'
+                          : 'bg-[#182229] hover:bg-[#202c33] border-[#2a3942] text-[#00a884]'
+                      }`}
+                    >
+                      <Sparkles className="w-3 h-3 text-amber-400" />
+                      <span>תמלל הודעה זו ב-AI</span>
+                    </button>
+                  )}
+                </div>
               ) : (
                 <FormattedMessage text={msg.text} />
               )}

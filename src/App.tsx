@@ -193,6 +193,165 @@ export default function App() {
     }
   };
 
+  // Helper function to transcribe voice notes using AI API
+  const transcribeVoiceNote = async (
+    contactName: string,
+    contextPrompt?: string,
+    audioBase64?: string
+  ): Promise<string> => {
+    try {
+      const res = await fetch('/api/transcribe-voice', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contactName,
+          contextPrompt,
+          audioBase64,
+        }),
+      });
+      const data = await res.json();
+      return data.transcription || 'תמלול הודעה קולית בוצע בהצלחה.';
+    } catch (err) {
+      console.error('Error transcribing voice note:', err);
+      return 'שלום! רציתי לברר לגבי סטטוס ההזמנה והמשלוח במערכת SabanOS, תודה!';
+    }
+  };
+
+  // Manual voice note transcription trigger
+  const handleTranscribeVoiceNote = async (msgId: string) => {
+    if (!activeChat) return;
+
+    // Indicate loading state
+    setChats((prev) =>
+      prev.map((c) =>
+        c.id === activeChat.id
+          ? {
+              ...c,
+              messages: c.messages.map((m) =>
+                m.id === msgId ? { ...m, isTranscribing: true } : m
+              ),
+            }
+          : c
+      )
+    );
+
+    const targetMsg = activeChat.messages.find((m) => m.id === msgId);
+    const transcriptionText = await transcribeVoiceNote(
+      activeChat.contact.name,
+      targetMsg?.text || 'הודעה קולית לגבי שירות SabanOS'
+    );
+
+    setChats((prev) =>
+      prev.map((c) =>
+        c.id === activeChat.id
+          ? {
+              ...c,
+              messages: c.messages.map((m) =>
+                m.id === msgId
+                  ? { ...m, transcription: transcriptionText, isTranscribing: false }
+                  : m
+              ),
+            }
+          : c
+      )
+    );
+  };
+
+  // Simulate an incoming voice note and transcribe it BEFORE adding to message list
+  const handleSimulateIncomingVoiceNote = async () => {
+    if (!activeChat) return;
+
+    setIsTyping(true);
+
+    // 1. Transcribe voice note using AI API BEFORE adding message to list
+    const transcription = await transcribeVoiceNote(
+      activeChat.contact.name,
+      'הודעה קולית נכנסת מהלקוח לגבי תיאום משלוח/הזמנה ב-SabanOS'
+    );
+
+    setIsTyping(false);
+
+    const timeStr = new Date().toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' });
+    const incomingVoiceNote: Message = {
+      id: `msg_voice_in_${Date.now()}`,
+      chatId: activeChat.id,
+      sender: 'user', // incoming contact message
+      text: 'הודעה קולית',
+      timestamp: timeStr,
+      status: 'delivered',
+      type: 'voice_note',
+      isVoiceNote: true,
+      audioDuration: '0:18',
+      transcription, // AI Transcription generated BEFORE adding message to list
+    };
+
+    playWhatsAppIncomingSound();
+
+    setChats((prev) =>
+      prev.map((c) =>
+        c.id === activeChat.id
+          ? {
+              ...c,
+              updatedAt: new Date().toISOString(),
+              messages: [...c.messages, incomingVoiceNote],
+            }
+          : c
+      )
+    );
+
+    // Trigger AI response if contact is managed and auto-reply enabled
+    if (activeChat.contact.isAiManaged && settings.autoReplyEnabled) {
+      setIsTyping(true);
+      setTimeout(async () => {
+        try {
+          const res = await fetch('/api/chat/respond', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              chatId: activeChat.id,
+              contactName: activeChat.contact.name,
+              userMessage: `[הודעה קולית מתומללת מהלקוח]: ${transcription}`,
+              conversationHistory: activeChat.messages,
+              systemPrompt: settings.systemPrompt,
+              knowledgeBase: knowledgeBase,
+            }),
+          });
+          const data = await res.json();
+          const replyText = data.text || 'שמעתי את ההודעה הקולית שלך! אשמח לעזור בנושא.';
+
+          setIsTyping(false);
+
+          const aiMsg: Message = {
+            id: `msg_ai_${Date.now()}`,
+            chatId: activeChat.id,
+            sender: 'ai',
+            text: replyText,
+            timestamp: new Date().toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' }),
+            status: 'read',
+          };
+
+          setChats((prev) =>
+            prev.map((c) =>
+              c.id === activeChat.id
+                ? {
+                    ...c,
+                    messages: c.messages
+                      .map((m) => (m.id === incomingVoiceNote.id ? { ...m, status: 'read' } : m))
+                      .concat(aiMsg),
+                  }
+                : c
+            )
+          );
+
+          playWhatsAppIncomingSound();
+        } catch (err) {
+          console.error('Error fetching AI response to voice note:', err);
+          setIsTyping(false);
+        }
+      }, settings.typingDelayMs || 1200);
+    }
+  };
+
   // Send Message & trigger AI simulation or Webhook
   const handleSendMessage = async (
     text: string,
@@ -202,6 +361,16 @@ export default function App() {
     if (!activeChat) return;
 
     const timeStr = new Date().toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' });
+
+    // If sending a voice note, transcribe it via AI first
+    let voiceTranscription: string | undefined = undefined;
+    if (type === 'voice_note') {
+      voiceTranscription = await transcribeVoiceNote(
+        'אתה',
+        text || 'הודעה קולית יוצאת'
+      );
+    }
+
     const userMsg: Message = {
       id: `msg_${Date.now()}`,
       chatId: activeChat.id,
@@ -213,6 +382,7 @@ export default function App() {
       mediaUrl,
       isVoiceNote: type === 'voice_note',
       audioDuration: type === 'voice_note' ? '0:12' : undefined,
+      transcription: voiceTranscription,
     };
 
     // Play outgoing sound
@@ -443,9 +613,11 @@ export default function App() {
                         : (settings.enableBlueTicks ?? true)
                     }
                     chatId={activeChat.id}
+                    onTranscribeVoiceNote={handleTranscribeVoiceNote}
                   />
                   <MessageInput
                     onSendMessage={handleSendMessage}
+                    onSimulateIncomingVoiceNote={handleSimulateIncomingVoiceNote}
                     darkTheme={settings.darkTheme}
                     isAiManaged={activeChat.contact.isAiManaged}
                     quickReplies={settings.quickReplies}

@@ -40,7 +40,7 @@ export const SidebarHeader: React.FC<SidebarHeaderProps> = ({
           title="SabanOS User Profile (לחץ 3 פעמים לפתיחת פאנל ניהול)"
         >
           <img
-            src="https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=120&auto=format&fit=crop&q=80"
+            src="https://i.ibb.co/k2GwyBfh/Gemini-Generated-Image-q7vwpcq7vwpcq7vw.png"
             alt="SabanOS Operator"
             className="w-10 h-10 rounded-full object-cover ring-2 ring-[#00a884]/40 group-hover:scale-105 transition-transform"
           />

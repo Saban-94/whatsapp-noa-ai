@@ -29,6 +29,7 @@ import {
   Zap,
   Copy,
   MessageSquareQuote,
+  Download,
 } from 'lucide-react';
 import { Chat, KnowledgeItem, AdminSettings, WebhookLog, QuickReply } from '../../types';
 import { HEBREW_WHATSAPP_TEMPLATES } from '../../data/whatsappTemplates';
@@ -1038,6 +1039,54 @@ export const AdminModal: React.FC<AdminModalProps> = ({
                     תוצאת בדיקה: {testResult}
                   </div>
                 )}
+              </div>
+
+              {/* Code.js Master Google Apps Script Code Viewer & Download */}
+              <div className="bg-[#202c33] p-5 rounded-xl border border-[#2a3942] space-y-3">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                      <Sparkles className="w-4 h-4 text-amber-400" />
+                      קוד המקור השלם של Google Apps Script (Code.js)
+                    </h3>
+                    <p className="text-xs text-[#8696a0]">
+                      קובץ הקוד המלא והמוכן להדבקה ב-Google Apps Script (Gemini Studio Backend)
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => {
+                        fetch('/Code.js')
+                          .then((res) => res.text())
+                          .then((text) => {
+                            navigator.clipboard.writeText(text);
+                            alert('קוד Code.js הועתק ללוח בהצלחה!');
+                          })
+                          .catch(() => alert('שגיאה בהעתקת הקוד'));
+                      }}
+                      className="px-3 py-1.5 bg-[#00a884] hover:bg-[#008f70] text-[#111b21] font-bold text-xs rounded-lg flex items-center gap-1.5 cursor-pointer shadow-sm"
+                    >
+                      <Copy className="w-3.5 h-3.5" />
+                      העתק את Code.js
+                    </button>
+                    <a
+                      href="/Code.js"
+                      download="Code.js"
+                      className="px-3 py-1.5 bg-[#182229] hover:bg-[#2a3942] text-[#e9edef] font-bold text-xs rounded-lg flex items-center gap-1.5 border border-[#2a3942] transition-colors"
+                    >
+                      <Download className="w-3.5 h-3.5 text-[#00a884]" />
+                      הורד קובץ
+                    </a>
+                  </div>
+                </div>
+
+                <div className="bg-[#111b21] p-3 rounded-xl border border-[#2a3942] text-xs font-mono text-emerald-300 max-h-60 overflow-y-auto whitespace-pre font-mono dir-ltr">
+                  {`/**
+ * SabanOS - Google Apps Script Master Backend (Code.js)
+ * Includes doPost(e), generateNoaResponse(), sendWhatsAppMessage(),
+ * setupDatabaseAndDashboard(), updateCustomerRecord(), logConversation()
+ */`}
+                </div>
               </div>
 
               {/* Webhook Logs Viewer */}

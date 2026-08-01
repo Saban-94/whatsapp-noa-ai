@@ -16,16 +16,21 @@ import {
   Search,
   MessageSquareQuote,
   Check,
+  Wand2,
+  RefreshCw,
 } from 'lucide-react';
 import { HEBREW_WHATSAPP_TEMPLATES, WhatsAppTemplate } from '../../data/whatsappTemplates';
-import { QuickReply } from '../../types';
+import { Message, QuickReply } from '../../types';
 import { DEFAULT_QUICK_REPLIES } from '../../data/mockData';
 
 interface MessageInputProps {
   onSendMessage: (text: string, type?: 'text' | 'image' | 'document' | 'voice_note', mediaUrl?: string) => void;
+  onSimulateIncomingVoiceNote?: () => void;
   darkTheme: boolean;
   isAiManaged?: boolean;
   quickReplies?: QuickReply[];
+  messages?: Message[];
+  contactName?: string;
 }
 
 const EMOJI_CATEGORIES = [
@@ -69,9 +74,12 @@ const EMOJI_CATEGORIES = [
 
 export const MessageInput: React.FC<MessageInputProps> = ({
   onSendMessage,
+  onSimulateIncomingVoiceNote,
   darkTheme,
   isAiManaged,
   quickReplies,
+  messages = [],
+  contactName,
 }) => {
   const [text, setText] = useState('');
   const [showEmojis, setShowEmojis] = useState(false);
@@ -82,11 +90,72 @@ export const MessageInput: React.FC<MessageInputProps> = ({
   const [showTemplates, setShowTemplates] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
   const [recordingSeconds, setRecordingSeconds] = useState(0);
+
+  // Smart Suggest AI state
+  const [showSmartSuggest, setShowSmartSuggest] = useState(false);
+  const [smartSuggestions, setSmartSuggestions] = useState<string[]>([]);
+  const [isLoadingSmartSuggest, setIsLoadingSmartSuggest] = useState(false);
   
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const recordingTimerRef = useRef<NodeJS.Timeout | null>(null);
 
   const effectiveQuickReplies = (quickReplies && quickReplies.length > 0) ? quickReplies : DEFAULT_QUICK_REPLIES;
+
+  // Trigger Gemini API to analyze last 3 incoming messages & generate 3 proposed replies
+  const handleFetchSmartSuggest = async () => {
+    setIsLoadingSmartSuggest(true);
+    setShowSmartSuggest(true);
+    setShowQuickReplies(false);
+    setShowTemplates(false);
+    setShowEmojis(false);
+    setShowAttachments(false);
+
+    // Extract last 3 incoming messages from user/contact
+    const lastIncoming = messages
+      .filter((m) => m.sender === 'user' || m.sender === 'contact')
+      .slice(-3);
+
+    try {
+      const res = await fetch('/api/chat/smart-suggest', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contactName: contactName || 'הלקוח',
+          lastIncomingMessages: lastIncoming,
+          conversationHistory: messages.slice(-6),
+        }),
+      });
+      const data = await res.json();
+      if (data.success && Array.isArray(data.suggestions) && data.suggestions.length > 0) {
+        setSmartSuggestions(data.suggestions);
+      } else {
+        setSmartSuggestions([
+          `שלום ${contactName || 'יקר/ה'}, קיבלנו את הפנייה ונחזור אליך תוך מספר דקות.`,
+          `היי, רציתי לעדכן שצוות SabanOS מטפל בבקשתך כעת.`,
+          `שלום, האם תרצה לקבל הצעת מחיר מעודכנת או לתאם הגעת מנוף?`,
+        ]);
+      }
+    } catch (err) {
+      console.error('Failed to fetch Smart Suggestions:', err);
+      setSmartSuggestions([
+        `שלום ${contactName || 'יקר/ה'}, קיבלנו את הפנייה ונחזור אליך תוך מספר דקות.`,
+        `היי, רציתי לעדכן שצוות SabanOS מטפל בבקשתך כעת.`,
+        `שלום, האם תרצה לקבל הצעת מחיר מעודכנת או לתאם הגעת מנוף?`,
+      ]);
+    } finally {
+      setIsLoadingSmartSuggest(false);
+    }
+  };
+
+  const handleSelectSuggestion = (suggestionText: string) => {
+    setText(suggestionText);
+    setShowSmartSuggest(false);
+    setTimeout(() => {
+      if (textareaRef.current) {
+        textareaRef.current.focus();
+      }
+    }, 50);
+  };
 
   // Slash command autocomplete detection
   const isSlashCommandActive = text.trim().startsWith('/') || text.includes(' /');
@@ -423,7 +492,7 @@ export const MessageInput: React.FC<MessageInputProps> = ({
 
       {/* Attachments Popup */}
       {showAttachments && (
-        <div className="absolute bottom-16 right-12 bg-[#233138] border border-[#2a3942] rounded-xl p-2 shadow-2xl z-50 flex flex-col gap-1 w-48 text-sm">
+        <div className="absolute bottom-16 right-12 bg-[#233138] border border-[#2a3942] rounded-xl p-2 shadow-2xl z-50 flex flex-col gap-1 w-56 text-sm">
           <button
             onClick={handleSendSampleImage}
             className="flex items-center gap-3 px-3 py-2 hover:bg-[#182229] rounded-lg text-[#d1d7db] text-right cursor-pointer"
@@ -443,8 +512,20 @@ export const MessageInput: React.FC<MessageInputProps> = ({
             className="flex items-center gap-3 px-3 py-2 hover:bg-[#182229] rounded-lg text-[#d1d7db] text-right cursor-pointer"
           >
             <Mic className="w-4 h-4 text-[#00a884]" />
-            <span>הקלטה קולית</span>
+            <span>הקלטה קולית יוצאת</span>
           </button>
+          {onSimulateIncomingVoiceNote && (
+            <button
+              onClick={() => {
+                onSimulateIncomingVoiceNote();
+                setShowAttachments(false);
+              }}
+              className="flex items-center gap-3 px-3 py-2 hover:bg-[#182229] rounded-lg text-amber-400 text-right cursor-pointer border-t border-[#2a3942] mt-1 pt-2"
+            >
+              <Sparkles className="w-4 h-4 text-amber-400" />
+              <span>הקלטה קולית נכנסת (AI)</span>
+            </button>
+          )}
         </div>
       )}
 

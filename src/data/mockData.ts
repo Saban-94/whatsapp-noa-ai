@@ -40,7 +40,7 @@ export const INITIAL_SETTINGS: AdminSettings = {
 2. השתמש באימוג'ים מתאימים כדי להפוך את השיחה לנעימה.
 3. במידה ולקוח שואל על תפריט או מחירון, היעזר במאגר הידע של SabanOS.
 4. אישור הזמנות מתבצע אוטומטית ומסתנכרן מול ה-Webhook המרכזי.`,
-  webAppUrl: "https://script.google.com/macros/s/AKfycbwvTGiE1h1AR9csbFhVQczFbOpHVXpyQN6MlIQX1NykSvJnjfi6_zipZOj76xnPqfk/exec",
+  webAppUrl: "https://script.google.com/macros/s/AKfycbyprvTw-41n3-WS6a9QN9gKssWPIkB7VvueaTwEiDgdXCI094Ur58CG8DoUwmPiEMRCjw/exec",
   webhookSyncEnabled: true,
   activeModel: "gemini-3.6-flash",
   autoReplyEnabled: true,
@@ -195,6 +195,18 @@ export const INITIAL_CHATS: Chat[] = [
         text: 'היי נועה, רציתי לברר לגבי תפריט קייטרינג לאירוע חברה של 50 איש ליום חמישי הקרוב.',
         timestamp: '10:22',
         status: 'delivered',
+      },
+      {
+        id: 'm_m2',
+        chatId: 'chat_michal',
+        sender: 'user',
+        text: 'הודעה קולית',
+        timestamp: '10:23',
+        status: 'delivered',
+        type: 'voice_note',
+        isVoiceNote: true,
+        audioDuration: '0:24',
+        transcription: 'היי נועה, שלחתי לך הודעה קולית כדי להסביר - אנחנו צריכים תפריט בשרי מלא ל-50 מוזמנים ביום חמישי בערב, כולל שתייה קלה וקינוחים. אשמח שתחזרי אליי עם הצעת מחיר מעודכנת. תודה!',
       },
     ],
   },
