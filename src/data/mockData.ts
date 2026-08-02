@@ -145,12 +145,35 @@ export const INITIAL_CHATS: Chat[] = [
       name: 'דוד סבג (סאבאן ספורט)',
       phone: '052-4433221',
       avatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150&auto=format&fit=crop&q=80',
+      company: 'סאבאן ספורט בע"מ',
+      address: 'רחוב הבנאים 12, אשדוד',
+      creditLimit: 50000,
+      balance: 12400,
       statusText: 'סאבאן ספורט ציוד וביגוד',
       isOnline: true,
       isPinned: true,
       isAiManaged: true,
       unreadCount: 0,
       labels: ['לקוח VIP', 'סאבאן ספורט'],
+      notes: 'לקוח קבוע. מעדיף אספקות בבקרים. מאושר אשראי 50k',
+      orderHistory: [
+        {
+          id: 'ORD-9021',
+          date: '2026-07-28',
+          items: '50 שק מלט אפור [10001], 10 בלה סומסום [20001]',
+          total: 4200,
+          status: 'סופק',
+          skuDetails: '[מק"ט 10001] שק מלט אפור 50 ק"ג x50, [מק"ט 20001] בלה סומסום נקי x10'
+        },
+        {
+          id: 'ORD-9104',
+          date: '2026-08-01',
+          items: '20 שק גבס לבן [40002], 5 פנל גבס ירוק [40001]',
+          total: 1850,
+          status: 'בדרך',
+          skuDetails: '[מק"ט 40002] שק גבס לבן 25 ק"ג x20, [מק"ט 40001] פנל גבס ירוק עמיד מים x5'
+        }
+      ]
     },
     messages: [
       {
@@ -241,6 +264,15 @@ export const INITIAL_CHATS: Chat[] = [
         text: 'מעולה, אפשר לראות את כל הלוגים בלוח הבקרה הנסתר של המנהל (Ctrl+Shift+A).',
         timestamp: '09:05',
         status: 'read',
+      },
+      {
+        id: 'm_tg3',
+        chatId: 'chat_team_group',
+        sender: 'ai',
+        text: '🚨 התרעת ביקורת (Discrepancy Audit Alert): זוהתה אי התאמה בין כמות הצמנט שנדרשה ב-WhatsApp (80 שקים) לבין רשומת ההזמנה במערכת Comax (30 שקים). נדרשת בדיקה של מנהל הלוגיסטיקה.',
+        timestamp: '09:12',
+        status: 'read',
+        hasDiscrepancy: true,
       },
     ],
   },

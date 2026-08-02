@@ -4,6 +4,7 @@ import { Message } from '../../types';
 import { WaveformPlayer } from './WaveformPlayer';
 import { FormattedMessage } from './FormattedMessage';
 import { MediaLightboxModal } from './MediaLightboxModal';
+import { DiscrepancyIndicator, isDiscrepancyMessage } from './DiscrepancyIndicator';
 
 interface MessageListProps {
   messages: Message[];
@@ -82,6 +83,7 @@ export const MessageList: React.FC<MessageListProps> = ({
         const isUser = msg.sender === 'user';
         const isAi = msg.sender === 'ai';
         const senderDisplayName = isUser ? 'אתה' : isAi ? 'Noa AI (נועה)' : contactName;
+        const hasDiscrepancy = isDiscrepancyMessage(msg);
 
         return (
           <div
@@ -91,11 +93,24 @@ export const MessageList: React.FC<MessageListProps> = ({
             {/* Speech Bubble Box */}
             <div
               className={`max-w-[85%] sm:max-w-[65%] rounded-lg px-3 py-2 shadow-xs relative text-sm ${
-                isUser
+                hasDiscrepancy
+                  ? darkTheme
+                    ? 'border-2 border-red-500 shadow-md shadow-red-500/20 ring-2 ring-red-500/20 bg-[#2b171a] text-[#e9edef]'
+                    : 'border-2 border-red-500 shadow-md shadow-red-500/20 ring-2 ring-red-500/20 bg-red-50/90 text-[#111b21]'
+                  : isUser
                   ? darkTheme ? 'bg-[#005c4b] text-[#e9edef] rounded-tr-none' : 'bg-[#d9fdd3] text-[#111b21] rounded-tr-none'
                   : darkTheme ? 'bg-[#202c33] text-[#e9edef] rounded-tl-none' : 'bg-white text-[#111b21] rounded-tl-none'
               }`}
             >
+              {/* Discrepancy & Audit Alert Indicator */}
+              {hasDiscrepancy && (
+                <DiscrepancyIndicator
+                  darkTheme={darkTheme}
+                  isReviewed={msg.isReviewed}
+                  messageText={msg.text}
+                />
+              )}
+
               {/* Sender Label for AI */}
               {isAi && (
                 <div className="flex items-center gap-1 text-[11px] font-bold text-[#00a884] mb-1">

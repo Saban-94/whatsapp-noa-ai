@@ -135,9 +135,33 @@ export default function App() {
     );
   };
 
-  // Create new chat
-  const handleCreateChat = (name: string, phone: string, isAiManaged: boolean) => {
+  // Create new chat with CRM context & initial order history association
+  const handleCreateChat = (
+    name: string,
+    phone: string,
+    isAiManaged: boolean,
+    extraDetails?: {
+      company?: string;
+      address?: string;
+      notes?: string;
+      initialOrderSummary?: string;
+    }
+  ) => {
     const newChatId = `chat_${Date.now()}`;
+    
+    // Construct initial order history record if specified
+    const orderHistory = extraDetails?.initialOrderSummary
+      ? [
+          {
+            id: `ORD-${Math.floor(1000 + Math.random() * 9000)}`,
+            date: new Date().toISOString().split('T')[0],
+            items: extraDetails.initialOrderSummary,
+            total: 0,
+            status: 'בטיפול' as const,
+          },
+        ]
+      : [];
+
     const newChat: Chat = {
       id: newChatId,
       updatedAt: new Date().toISOString(),
@@ -145,17 +169,23 @@ export default function App() {
         id: `c_${Date.now()}`,
         name,
         phone,
+        company: extraDetails?.company,
+        address: extraDetails?.address,
+        notes: extraDetails?.notes,
         avatar: `https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150&auto=format&fit=crop&q=80`,
         isOnline: true,
         isAiManaged,
         unreadCount: 0,
+        orderHistory,
       },
       messages: [
         {
           id: `m_init_${Date.now()}`,
           chatId: newChatId,
           sender: 'ai',
-          text: `שלום ${name}! שמי נועה AI מסאבאן. במה אוכל לעזור לך היום?`,
+          text: `שלום ${name}! שמי נועה AI מסאבאן. תיק הלקוח שלך עודכן במערכת SabanOS${
+            extraDetails?.company ? ` (${extraDetails.company})` : ''
+          }. במה אוכל לעזור לך היום? 📦`,
           timestamp: new Date().toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' }),
           status: 'read',
         },
@@ -209,10 +239,13 @@ export default function App() {
           audioBase64,
         }),
       });
+      if (!res.ok) {
+        throw new Error(`HTTP ${res.status}`);
+      }
       const data = await res.json();
       return data.transcription || 'תמלול הודעה קולית בוצע בהצלחה.';
     } catch (err) {
-      console.error('Error transcribing voice note:', err);
+      console.warn('Voice transcription fetch issue, using smart fallback:', err);
       return 'שלום! רציתי לברר לגבי סטטוס ההזמנה והמשלוח במערכת SabanOS, תודה!';
     }
   };
@@ -314,6 +347,8 @@ export default function App() {
               conversationHistory: activeChat.messages,
               systemPrompt: settings.systemPrompt,
               knowledgeBase: knowledgeBase,
+              customerProfile: activeChat.contact,
+              orderHistory: activeChat.contact.orderHistory || [],
             }),
           });
           const data = await res.json();
@@ -345,8 +380,31 @@ export default function App() {
 
           playWhatsAppIncomingSound();
         } catch (err) {
-          console.error('Error fetching AI response to voice note:', err);
+          console.warn('Error fetching AI response to voice note:', err);
           setIsTyping(false);
+
+          const fallbackMsg: Message = {
+            id: `msg_ai_${Date.now()}`,
+            chatId: activeChat.id,
+            sender: 'ai',
+            text: 'שמעתי את ההודעה הקולית שלך! הודעתך נקלטה במערכת SabanOS ונשמח לסייע. 😊',
+            timestamp: new Date().toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' }),
+            status: 'read',
+          };
+
+          setChats((prev) =>
+            prev.map((c) =>
+              c.id === activeChat.id
+                ? {
+                    ...c,
+                    messages: c.messages
+                      .map((m) => (m.id === incomingVoiceNote.id ? { ...m, status: 'read' } : m))
+                      .concat(fallbackMsg),
+                  }
+                : c
+            )
+          );
+          playWhatsAppIncomingSound();
         }
       }, settings.typingDelayMs || 1200);
     }
@@ -455,6 +513,8 @@ export default function App() {
             conversationHistory: activeChat.messages,
             systemPrompt: settings.systemPrompt,
             knowledgeBase: knowledgeBase,
+            customerProfile: activeChat.contact,
+            orderHistory: activeChat.contact.orderHistory || [],
           }),
         });
 
@@ -490,8 +550,29 @@ export default function App() {
         }, settings.typingDelayMs || 1200);
 
       } catch (err) {
-        console.error('Error fetching AI response:', err);
+        console.warn('Error fetching AI response:', err);
         setIsTyping(false);
+
+        const fallbackMsg: Message = {
+          id: `msg_ai_${Date.now()}`,
+          chatId: activeChat.id,
+          sender: 'ai',
+          text: 'שלום! הודעתך נקלטה במערכת SabanOS. נשמח לסייע לך בכל שאלה לגבי משלוחים, הזמנות ומידע נוסף! 😊',
+          timestamp: new Date().toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' }),
+          status: 'read',
+        };
+
+        setChats((prev) =>
+          prev.map((c) =>
+            c.id === activeChat.id
+              ? {
+                  ...c,
+                  messages: c.messages.map((m) => (m.id === userMsg.id ? { ...m, status: 'read' } : m)).concat(fallbackMsg),
+                }
+              : c
+          )
+        );
+        playWhatsAppIncomingSound();
       }
     }
   };

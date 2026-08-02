@@ -19,6 +19,18 @@ export interface Message {
   isVoiceNote?: boolean;
   transcription?: string;
   isTranscribing?: boolean;
+  hasDiscrepancy?: boolean;
+  isDiscrepancy?: boolean;
+  isReviewed?: boolean;
+}
+
+export interface CustomerOrderRecord {
+  id: string;
+  date: string;
+  items: string;
+  total: number;
+  status: 'בטיפול' | 'אושר' | 'סופק' | 'בדרך';
+  skuDetails?: string;
 }
 
 export interface Contact {
@@ -26,6 +38,10 @@ export interface Contact {
   name: string;
   phone: string;
   avatar: string;
+  company?: string;
+  address?: string;
+  creditLimit?: number;
+  balance?: number;
   statusText?: string;
   isOnline: boolean;
   lastSeen?: string;
@@ -36,6 +52,7 @@ export interface Contact {
   unreadCount: number;
   labels?: string[];
   notes?: string;
+  orderHistory?: CustomerOrderRecord[];
   blueTicksOverride?: 'global' | 'enabled' | 'disabled';
 }
 
@@ -96,3 +113,23 @@ export interface WebhookLog {
 }
 
 export type ChatFilter = 'all' | 'unread' | 'favorites' | 'groups';
+
+export interface LogisticProduct {
+  sku: string;
+  productName: string;
+  aliases: string[];
+  unit: string;
+  category?: string;
+  price?: number;
+}
+
+export interface NormalizedOrderItem {
+  sku: string;
+  name: string;
+  quantity: number;
+  unit: string;
+  originalText?: string;
+  confidence?: number;
+  unitPrice?: number;
+  totalPrice?: number;
+}

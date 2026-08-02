@@ -36,7 +36,8 @@ var CONFIG = {
     DASHBOARD: "דשבורד ראשי",
     CUSTOMERS: "תיקי לקוחות",
     LOGS: "תיעוד שיחות",
-    SETTINGS: "הגדרות מערכת"
+    SETTINGS: "הגדרות מערכת",
+    LOGISTIC_DICTIONARY: "מילון_לוגיסטי"
   },
   
   // נקודת קצה לצינור JONI / WhatsApp API
@@ -116,6 +117,37 @@ function doGet(e) {
 function handleIncomingWebhook(payload) {
   // הקמת תשתית הגיליונות במידה ועדיין לא הוקמה
   setupDatabaseAndDashboard();
+  
+  // טיפול בבקשת קבלת מילון מוצרים בלבד
+  if (payload && payload.action === "get_logistic_dictionary") {
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var dictList = [];
+    if (ss) {
+      var dictSheet = ss.getSheetByName(CONFIG.SHEETS.LOGISTIC_DICTIONARY);
+      if (dictSheet) {
+        var data = dictSheet.getDataRange().getValues();
+        for (var i = 1; i < data.length; i++) {
+          if (data[i][0]) {
+            var aliasesStr = data[i][2] ? data[i][2].toString() : "";
+            dictList.push({
+              sku: data[i][0].toString(),
+              productName: data[i][1] ? data[i][1].toString() : "",
+              aliases: aliasesStr.split(",").map(function(a){ return a.trim(); }).filter(Boolean),
+              unit: data[i][3] ? data[i][3].toString() : "יחידה",
+              category: data[i][4] ? data[i][4].toString() : "כללי",
+              price: parseFloat(data[i][5]) || 0
+            });
+          }
+        }
+      }
+    }
+    return {
+      success: true,
+      tab: CONFIG.SHEETS.LOGISTIC_DICTIONARY,
+      count: dictList.length,
+      dictionary: dictList
+    };
+  }
   
   // חילוץ פרטי ההודעה מתוך נתוני JONI / Baileys
   var messageText = payload.message || payload.text || payload.body || "";
@@ -377,6 +409,29 @@ function setupDatabaseAndDashboard() {
     var logHeaders = [["מזהה ייחודי", "תאריך ושעה", "מספר טלפון / קבוצה", "שם השולח", "סוג שיחה", "תוכן הודעה נכנסת", "מענה נועה (AI)", "סטטוס טיפול"]];
     logSheet.getRange("A1:H1").setValues(logHeaders).setBackground("#005C4B").setFontColor("#FFFFFF").setFontWeight("bold");
     logSheet.setColumnWidths(1, 8, 170);
+  }
+
+  // 4. גיליון מילון לוגיסטי (מילון_לוגיסטי - Dynamic SKUs & Aliases)
+  var dictSheet = ss.getSheetByName(CONFIG.SHEETS.LOGISTIC_DICTIONARY);
+  if (!dictSheet) {
+    dictSheet = ss.insertSheet(CONFIG.SHEETS.LOGISTIC_DICTIONARY, 3);
+    var dictHeaders = [["מק\"ט", "שם מוצר תקני", "כינויים / מילות מפתח", "יחידת מידה", "קטגוריה", "מחיר מחירון (₪)"]];
+    dictSheet.getRange("A1:F1").setValues(dictHeaders).setBackground("#005C4B").setFontColor("#FFFFFF").setFontWeight("bold");
+    
+    var initialItems = [
+      ["10001", "שק מלט אפור 50 ק\"ג", "מלט אפור 50, שק מלט 50, מלט 50", "שק", "חומרי מליטה", 38],
+      ["10002", "שק מלט אפור 25 ק\"ג", "מלט, שק מלט, מלט אפור, מלט 25", "שק", "חומרי מליטה", 22],
+      ["10003", "שק מלט לבן 25 ק\"ג", "מלט לבן, שק מלט לבן, מלט לבן 25", "שק", "חומרי מליטה", 34],
+      ["20001", "בלה סומסום נקי", "סומסום, בלה סומסום, שק סומסום", "בלה", "חול וסומסום", 110],
+      ["20002", "בלה חול מחצבה (טיט)", "חול, חול מחצבה, טיט, בלה חול", "בלה", "חול וסומסום", 105],
+      ["20003", "בלה חצץ 1/2 (עדש)", "חצץ, עדש, בלה חצץ", "בלה", "חול וסומסום", 115],
+      ["30001", "משטח בלוק בטון 20 (96 יח')", "בלוק בטון, בלוק 20, בלוקים", "משטח", "בלוקים", 480],
+      ["30002", "משטח בלוק איטונג 20 (72 יח')", "איטונג, בלוק איטונג, איטונג 20", "משטח", "בלוקים", 650],
+      ["40001", "שק טיח גבס תרמי 25 ק\"ג", "טיח, טיח גבס, טיח תרמי", "שק", "גבס וטיח", 45],
+      ["40002", "לוח גבס ירוק עמיד מים 12.5 מ\"מ", "גבס ירוק, לוח גבס ירוק, גבס נגד מים", "יחידה", "גבס וטיח", 42]
+    ];
+    dictSheet.getRange(2, 1, initialItems.length, 6).setValues(initialItems);
+    dictSheet.setColumnWidths(1, 6, 170);
   }
 }
 

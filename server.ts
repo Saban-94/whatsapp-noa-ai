@@ -168,6 +168,63 @@ app.post("/api/webhook/google-script", async (req, res) => {
   }
 });
 
+// Local Server WhatsApp Webhook Listener (GET & POST)
+app.get("/api/webhook/whatsapp", (req, res) => {
+  const mode = req.query["hub.mode"];
+  const challenge = req.query["hub.challenge"];
+  if (mode === "subscribe") {
+    console.log("WhatsApp Webhook listener verified via local server!");
+    return res.status(200).send(challenge || "VERIFIED");
+  }
+  res.json({
+    status: "listening",
+    server: "SabanOS Local Server WhatsApp Listener",
+    timestamp: new Date().toISOString(),
+    endpoint: "/api/webhook/whatsapp",
+  });
+});
+
+app.post(["/api/webhook/whatsapp", "/api/webhook/incoming"], async (req, res) => {
+  const body = req.body || {};
+  console.log("Incoming WhatsApp message captured on local server:", JSON.stringify(body));
+
+  const logEntry = {
+    id: `wh_in_${Date.now()}`,
+    timestamp: new Date().toLocaleTimeString("he-IL"),
+    direction: "incoming" as const,
+    url: "/api/webhook/whatsapp",
+    payload: body,
+    responseCode: 200,
+    status: "success" as const,
+    details: "Captured incoming message via WhatsApp local listener",
+  };
+
+  webhookLogs.push(logEntry);
+  if (webhookLogs.length > 50) webhookLogs.shift();
+
+  const senderName = body.contactName || body.sender || body.name || body.entry?.[0]?.changes?.[0]?.value?.contacts?.[0]?.profile?.name || "לקוח וואטסאפ";
+  const senderPhone = body.phone || body.from || body.entry?.[0]?.changes?.[0]?.value?.messages?.[0]?.from || "050-0000000";
+  const userMessage = body.message || body.text || body.entry?.[0]?.changes?.[0]?.value?.messages?.[0]?.text?.body || body.body || "";
+
+  if (!userMessage) {
+    return res.json({ success: true, status: "listening", note: "Webhook received but no text payload" });
+  }
+
+  // Local verification against Logistic Dictionary
+  const orderVerificationText = verifyOrderLocally(userMessage, senderName);
+
+  res.json({
+    success: true,
+    status: "received_and_processed",
+    senderName,
+    senderPhone,
+    userMessage,
+    orderVerification: orderVerificationText ? "Verified against מילון_לוגיסטי" : "Standard query",
+    aiReplyText: orderVerificationText || `שלום ${senderName}! הודעתך נקלטה בהצלחה בשרת SabanOS.`,
+    timestamp: new Date().toISOString(),
+  });
+});
+
 // Voice Note AI Transcription API Route
 app.post("/api/transcribe-voice", async (req, res) => {
   const {
@@ -271,12 +328,165 @@ app.post("/api/transcribe-voice", async (req, res) => {
   });
 });
 
+// Logistic Dictionary (מילון_לוגיסטי) state & product database
+let logisticDictionary = [
+  { sku: "10001", productName: 'שק מלט אפור 50 ק"ג', aliases: ["מלט אפור 50", "שק מלט 50", "מלט 50", "מלט 50 קג"], unit: "שק", category: "חומרי מליטה", price: 38 },
+  { sku: "10002", productName: 'שק מלט אפור 25 ק"ג', aliases: ["מלט", "שק מלט", "מלט אפור", "מלט 25"], unit: "שק", category: "חומרי מליטה", price: 22 },
+  { sku: "10003", productName: 'שק מלט לבן 25 ק"ג', aliases: ["מלט לבן", "שק מלט לבן", "מלט לבן 25"], unit: "שק", category: "חומרי מליטה", price: 34 },
+  { sku: "20001", productName: "בלה סומסום נקי", aliases: ["סומסום", "בלה סומסום", "שק סומסום", "סומסום נקי"], unit: "בלה", category: "חול וסומסום", price: 110 },
+  { sku: "20002", productName: "בלה חול מחצבה (טיט)", aliases: ["חול", "חול מחצבה", "טיט", "בלה חול", "בלה טיט"], unit: "בלה", category: "חול וסומסום", price: 105 },
+  { sku: "20003", productName: "בלה חצץ 1/2 (עדש)", aliases: ["חצץ", "עדש", "בלה חצץ", "חצץ עדש"], unit: "בלה", category: "חול וסומסום", price: 115 },
+  { sku: "20004", productName: "בלה זיפזיף לריצוף", aliases: ["זיפזיף", "בלה זיפזיף", "חול זיפזיף"], unit: "בלה", category: "חול וסומסום", price: 120 },
+  { sku: "30001", productName: "משטח בלוק בטון 20 (96 יח')", aliases: ["בלוק בטון", "בלוק 20", "בלוק בטון 20", "בלוקים"], unit: "משטח", category: "בלוקים", price: 480 },
+  { sku: "30002", productName: "משטח בלוק איטונג 20 (72 יח')", aliases: ["איטונג", "בלוק איטונג", "איטונג 20", "בלוק איטונג 20"], unit: "משטח", category: "בלוקים", price: 650 },
+  { sku: "30003", productName: "משטח בלוק פומס 20 (96 יח')", aliases: ["פומס", "בלוק פומס", "פומס 20"], unit: "משטח", category: "בלוקים", price: 520 },
+  { sku: "40001", productName: 'שק טיח גבס תרמי 25 ק"ג', aliases: ["טיח", "טיח גבס", "טיח תרמי", "שק טיח"], unit: "שק", category: "גבס וטיח", price: 45 },
+  { sku: "40002", productName: 'לוח גבס ירוק עמיד מים 12.5 מ"מ', aliases: ["גבס ירוק", "לוח גבס ירוק", "גבס נגד מים"], unit: "יחידה", category: "גבס וטיח", price: 42 },
+  { sku: "40003", productName: 'לוח גבס לבן סטנדרטי 12.5 מ"מ', aliases: ["גבס לבן", "לוח גבס לבן", "לוח גבס"], unit: "יחידה", category: "גבס וטיח", price: 32 },
+  { sku: "50001", productName: 'פנל מבודד קלקר 50 מ"מ', aliases: ["פנל מבודד", "פנל קלקר", "פנל 50", "פנל מבודד 50"], unit: "מ\"ר", category: "בידוד", price: 85 },
+  { sku: "50002", productName: 'פנל מבודד צמר סלעים 80 מ"מ', aliases: ["פנל צמר סלעים", "פנל מבודד 80", "צמר סלעים"], unit: "מ\"ר", category: "בידוד", price: 125 },
+  { sku: "60001", productName: "משטח עץ טעון פיקדון", aliases: ["משטח", "משטחים", "פיקדון משטח", "משטח עץ"], unit: "משטח", category: "פקדונות", price: 45 },
+];
+
+// GET Logistic Products Dictionary (מילון_לוגיסטי)
+app.get("/api/products/dictionary", async (req, res) => {
+  // If webAppUrl is set, optionally sync from Google Apps Script tab מילון_לוגיסטי
+  if (serverSettings.webAppUrl) {
+    try {
+      const resp = await fetch(serverSettings.webAppUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "get_logistic_dictionary", tab: "מילון_לוגיסטי" }),
+      });
+      if (resp.ok) {
+        const data = await resp.json();
+        if (data && Array.isArray(data.dictionary) && data.dictionary.length > 0) {
+          logisticDictionary = data.dictionary;
+        }
+      }
+    } catch (e) {
+      console.warn("Could not sync live Google Sheets dictionary, returning current cached version.");
+    }
+  }
+
+  res.json({
+    success: true,
+    tab: "מילון_לוגיסטי",
+    count: logisticDictionary.length,
+    dictionary: logisticDictionary,
+  });
+});
+
+// POST Add or update product in Logistic Products Dictionary
+app.post("/api/products/dictionary", (req, res) => {
+  const { sku, productName, aliases, unit, category, price } = req.body;
+  if (!sku || !productName) {
+    return res.status(400).json({ success: false, error: "SKU and Product Name are required" });
+  }
+
+  const existingIndex = logisticDictionary.findIndex((p) => p.sku === sku);
+  const newProduct = {
+    sku: String(sku).trim(),
+    productName: String(productName).trim(),
+    aliases: Array.isArray(aliases) ? aliases : String(aliases || "").split(",").map((a) => a.trim()).filter(Boolean),
+    unit: String(unit || "יחידה").trim(),
+    category: String(category || "כללי").trim(),
+    price: Number(price) || 0,
+  };
+
+  if (existingIndex >= 0) {
+    logisticDictionary[existingIndex] = newProduct;
+  } else {
+    logisticDictionary.push(newProduct);
+  }
+
+  res.json({
+    success: true,
+    message: `מוצר ${newProduct.sku} (${newProduct.productName}) עודכן בהצלחה במילון הלוגיסטי.`,
+    product: newProduct,
+    dictionary: logisticDictionary,
+  });
+});
+
+// POST Normalize free text customer order into structured items
+app.post("/api/products/normalize", (req, res) => {
+  const { text, customerName = "לקוח" } = req.body;
+  if (!text || typeof text !== "string") {
+    return res.status(400).json({ success: false, error: "Text string is required" });
+  }
+
+  const lines = text.split(/[\n,;+]| וגם | ועוד |\t/).map((l) => l.trim()).filter(Boolean);
+  const normalizedItems: any[] = [];
+
+  for (const line of lines) {
+    let quantity = 1;
+    let textWithoutQty = line;
+
+    const numMatch = line.match(/(?:^|\s)(\d+)(?:\s*x|\s*שקים|\s*בלות|\s*משטחים|\s*יח|\s*יחידות|\s*מ"ר)?(?:\s+|$)/i);
+    if (numMatch) {
+      quantity = parseInt(numMatch[1], 10);
+      textWithoutQty = line.replace(numMatch[0], " ").trim();
+    }
+
+    let targetTerm = textWithoutQty.toLowerCase().replace(/(רוצה|צריך|תביא|תוסיף|משלוח של|הזמנה של|בבקשה)/g, "").trim();
+
+    let bestMatch: any = null;
+    let highestScore = 0;
+
+    for (const prod of logisticDictionary) {
+      let score = 0;
+      for (const alias of prod.aliases) {
+        const lowerAlias = alias.toLowerCase();
+        if (targetTerm === lowerAlias) score = Math.max(score, 100);
+        else if (targetTerm.includes(lowerAlias)) score = Math.max(score, 80);
+      }
+      if (targetTerm === prod.productName.toLowerCase()) score = Math.max(score, 100);
+      else if (targetTerm.includes(prod.productName.toLowerCase())) score = Math.max(score, 85);
+
+      if (score > highestScore) {
+        highestScore = score;
+        bestMatch = prod;
+      }
+    }
+
+    if (bestMatch && highestScore >= 30) {
+      normalizedItems.push({
+        sku: bestMatch.sku,
+        name: bestMatch.productName,
+        quantity,
+        unit: bestMatch.unit,
+        unitPrice: bestMatch.price || 0,
+        totalPrice: (bestMatch.price || 0) * quantity,
+        confidence: highestScore >= 90 ? 1.0 : 0.8,
+        originalText: line,
+      });
+    } else {
+      normalizedItems.push({
+        sku: "GENERIC-99",
+        name: textWithoutQty || line,
+        quantity,
+        unit: "יחידה",
+        confidence: 0.3,
+        originalText: line,
+      });
+    }
+  }
+
+  res.json({
+    success: true,
+    tab: "מילון_לוגיסטי",
+    customerName,
+    items: normalizedItems,
+  });
+});
+
 // Endpoint to fetch Code.js Master Google Apps Script
 app.get("/Code.js", (req, res) => {
   const codePath = path.join(process.cwd(), "Code.js");
   res.setHeader("Content-Type", "text/javascript; charset=utf-8");
   res.sendFile(codePath);
 });
+
 
 // AI Smart Suggest API Route (Analyze last incoming messages and suggest 3 responses)
 app.post("/api/chat/smart-suggest", async (req, res) => {
@@ -388,6 +598,146 @@ app.get("/api/script/code-js", (req, res) => {
   }
 });
 
+// Helper function to verify customer orders against Logistic Dictionary (מילון_לוגיסטי)
+function verifyOrderLocally(userMessage: string, customerName: string = "לקוח"): string | null {
+  const lines = userMessage
+    .split(/[\n,;+]| וגם | ועוד |\t/)
+    .map((l) => l.trim())
+    .filter((l) => l.length > 1);
+
+  const verifiedItems: any[] = [];
+  const ambiguousItems: any[] = [];
+  const unmatchedItems: any[] = [];
+
+  const HEBREW_NUMS: Record<string, number> = {
+    אחד: 1, אחת: 1, שניים: 2, שתי: 2, שני: 2, שלושה: 3, שלוש: 3, ארבעה: 4, ארבע: 4, חמישה: 5, חמש: 5,
+    שישה: 6, שש: 6, שבעה: 7, שבע: 7, שמונה: 8, תשעה: 9, תשע: 9, עשרה: 10, עשר: 10, עשרים: 20, שלושים: 30, חמישים: 50
+  };
+
+  const FILLERS = ["רוצה", "צריך", "תביא", "תוסיף", "משלוח של", "הזמנה של", "בבקשה", "למחר", "היום", "עבור", "אתר"];
+
+  for (const line of lines) {
+    let quantity = 1;
+    let textWithoutQty = line;
+
+    const numMatch = line.match(/(?:^|\s)(\d+)(?:\s*x|\s*שקים|\s*בלות|\s*משטחים|\s*יח|\s*יחידות|\s*מ"ר)?(?:\s+|$)/i);
+    if (numMatch) {
+      quantity = parseInt(numMatch[1], 10);
+      textWithoutQty = line.replace(numMatch[0], " ").trim();
+    } else {
+      for (const w of line.split(/\s+/)) {
+        const cleanW = w.replace(/^[ובל-]/, "");
+        if (HEBREW_NUMS[cleanW]) {
+          quantity = HEBREW_NUMS[cleanW];
+          textWithoutQty = line.replace(w, " ").trim();
+          break;
+        }
+      }
+    }
+
+    let targetTerm = textWithoutQty.toLowerCase();
+    for (const f of FILLERS) {
+      targetTerm = targetTerm.replace(new RegExp(`\\b${f}\\b`, "gi"), " ").trim();
+    }
+    targetTerm = targetTerm.replace(/\s+/g, " ").trim();
+
+    if (!targetTerm || targetTerm.length < 2) continue;
+
+    const matches: { prod: any; score: number }[] = [];
+
+    for (const prod of logisticDictionary) {
+      let maxScore = 0;
+      for (const alias of prod.aliases) {
+        const lowerAlias = alias.toLowerCase();
+        if (targetTerm === lowerAlias) maxScore = Math.max(maxScore, 100);
+        else if (targetTerm.includes(lowerAlias)) maxScore = Math.max(maxScore, 85);
+        else if (lowerAlias.includes(targetTerm) && targetTerm.length >= 3) maxScore = Math.max(maxScore, 75);
+      }
+
+      const lowerProdName = prod.productName.toLowerCase();
+      if (targetTerm === lowerProdName) maxScore = Math.max(maxScore, 100);
+      else if (targetTerm.includes(lowerProdName)) maxScore = Math.max(maxScore, 85);
+      else if (lowerProdName.includes(targetTerm) && targetTerm.length >= 3) maxScore = Math.max(maxScore, 75);
+
+      const termWords = targetTerm.split(/\s+/).filter((w) => w.length > 2);
+      for (const tw of termWords) {
+        if (prod.aliases.some((a: string) => a.toLowerCase().includes(tw)) || lowerProdName.includes(tw)) {
+          maxScore = Math.max(maxScore, 60);
+        }
+      }
+
+      if (maxScore >= 50) {
+        matches.push({ prod, score: maxScore });
+      }
+    }
+
+    matches.sort((a, b) => b.score - a.score);
+
+    if (matches.length === 0) {
+      if (/(מלט|סומסום|חול|טיט|איטונג|בלוק|גבס|פנל|טיח|חצץ)/i.test(line)) {
+        unmatchedItems.push({ name: textWithoutQty || line, quantity });
+      }
+    } else if (matches.length === 1 || matches[0].score >= 90 || (matches[0].score - (matches[1]?.score || 0) >= 30)) {
+      const p = matches[0].prod;
+      verifiedItems.push({
+        sku: p.sku,
+        productName: p.productName,
+        quantity,
+        unit: p.unit,
+        unitPrice: p.price || 0,
+        totalPrice: (p.price || 0) * quantity,
+      });
+    } else {
+      ambiguousItems.push({
+        requestedName: textWithoutQty || line,
+        quantity,
+        matchingProducts: matches.map((m) => m.prod),
+      });
+    }
+  }
+
+  const hasOrderItems = verifiedItems.length > 0 || ambiguousItems.length > 0 || unmatchedItems.length > 0;
+
+  if (!hasOrderItems) return null;
+
+  let text = `שלום ${customerName}! קיבלנו את פנייתך ב-SabanOS. 📦\n\n`;
+  text += `אימתנו את המוצרים המבוקשים מול גליון *מילון_לוגיסטי*:\n\n`;
+
+  if (verifiedItems.length > 0) {
+    text += `✅ *מוצרים שאומתו במילון הלוגיסטי:*\n`;
+    verifiedItems.forEach((i) => {
+      const priceStr = i.totalPrice ? ` (₪${i.unitPrice} ל-${i.unit}, סה"כ: ₪${i.totalPrice})` : "";
+      text += ` • ${i.quantity} ${i.unit} *[מק"ט ${i.sku}] ${i.productName}*${priceStr}\n`;
+    });
+    text += `\n`;
+  }
+
+  if (ambiguousItems.length > 0) {
+    text += `❓ *אימות מק"ט ושם מוצר נדרש:* (נמצאו מספר מוצרים תואמים במילון)\n`;
+    ambiguousItems.forEach((amb) => {
+      text += `לגבי *${amb.requestedName}* (${amb.quantity} יחידות) - האם התכוונת ל:\n`;
+      amb.matchingProducts.forEach((p: any, idx: number) => {
+        text += `   ${idx + 1}. *[מק"ט ${p.sku}] ${p.productName}* (${p.price ? `₪${p.price} ל-${p.unit}` : p.unit})\n`;
+      });
+    });
+    text += `\nאנא בחר את המק"ט והמוצר המדויק מתוך המילון!\n\n`;
+  }
+
+  if (unmatchedItems.length > 0) {
+    text += `⚠️ *מוצרים לבדיקת מחסן:* ${unmatchedItems.map((u) => `${u.quantity}x ${u.name}`).join(", ")}\n\n`;
+  }
+
+  if (ambiguousItems.length === 0) {
+    const total = verifiedItems.reduce((acc, i) => acc + i.totalPrice, 0);
+    if (total > 0) text += `💰 *סה"כ משוער לחיוב:* ₪${total}\n\n`;
+    text += `ההזמנה המאומתת הועברה לצוות הלוגיסטיקה לטיפול מיידי! 🚛 🏗️`;
+  } else {
+    text += `לאחר אישורך על המק"ט המדויק, נעביר את ההזמנה המאומתת לצוות הלוגיסטיקה! 🚛`;
+  }
+
+  return text;
+}
+
 // AI Chat Respond API Route
 app.post("/api/chat/respond", async (req, res) => {
   const {
@@ -397,6 +747,8 @@ app.post("/api/chat/respond", async (req, res) => {
     conversationHistory = [],
     systemPrompt = serverSettings.systemPrompt,
     knowledgeBase = [],
+    customerProfile = null,
+    orderHistory = [],
   } = req.body;
 
   const ai = getGeminiClient();
@@ -416,6 +768,9 @@ app.post("/api/chat/respond", async (req, res) => {
     }).catch((err) => console.log("Google Apps Script sync background error:", err?.message));
   }
 
+  // Check if message contains order items to verify against Logistic Dictionary (מילון_לוגיסטי)
+  const orderVerificationText = verifyOrderLocally(userMessage, contactName);
+
   // Format Knowledge Base text for AI context
   const kbContext = Array.isArray(knowledgeBase) && knowledgeBase.length > 0
     ? `\n\nמאגר מידע ועובדות עסקיות (SabanOS KB):\n` +
@@ -425,7 +780,49 @@ app.post("/api/chat/respond", async (req, res) => {
         .join("\n")
     : "";
 
-  const fullSystemInstruction = `${systemPrompt}${kbContext}\n\nאתה משיב כעת בצ'אט וואטסאפ ללקוח בשם: "${contactName}". השב בצורה טבעית, תמציתית, מועילה, ובעברית בלבד.`;
+  const dictionaryContext = logisticDictionary && logisticDictionary.length > 0
+    ? `\n\nגליון 'מילון_לוגיסטי' ומק"טים רשמיים של SabanOS (עובדות בלבד!):\n` +
+      logisticDictionary
+        .map((p) => `- מק"ט: ${p.sku} | שם מוצר תקני: "${p.productName}" | יחידה: ${p.unit} | מחיר: ₪${p.price} | כינויים: [${p.aliases.join(", ")}]`)
+        .join("\n")
+    : "";
+
+  // Format Customer CRM profile & Order History context
+  const crmContext = customerProfile
+    ? `\n\nתיק לקוח CRM מיועד (${contactName}):\n` +
+      `- טלפון: ${customerProfile.phone || "לא צוין"}\n` +
+      `- חברה/עסק: ${customerProfile.company || "פרטי"}\n` +
+      `- כתובת/אתר: ${customerProfile.address || "לא צוינה"}\n` +
+      `- מסגרת אשראי/חוב: ${customerProfile.creditLimit ? `₪${customerProfile.creditLimit}` : "תקין"}\n` +
+      `- הערות מנהל: ${customerProfile.notes || "אין הערות"}`
+    : "";
+
+  const historyContext = Array.isArray(orderHistory) && orderHistory.length > 0
+    ? `\n\nהיסטוריית הזמנות קודמות של הלקוח (${contactName}):\n` +
+      orderHistory
+        .slice(-10)
+        .map((o: any) => `- הזמנה #${o.id || "ORD"} [תאריך ${o.date || "לאחרונה"}]: ${o.items || o.skuDetails || "פריטים"} (סה"כ: ₪${o.total || 0}, סטאטוס: ${o.status || "בטיפול"})`)
+        .join("\n")
+    : "";
+
+  const fullSystemInstruction = `${systemPrompt}
+
+${crmContext}
+
+${historyContext}
+
+${dictionaryContext}
+
+${kbContext}
+
+אתה משיב כעת בצ'אט וואטסאפ ללקוח בשם: "${contactName}".
+הוראות חובה לשירות נועה AI:
+1. השתמש בהיסטוריית השיחה וההזמנות הקודמות של הלקוח כדי לספק מענה מדויק ואישי!
+2. בכל הודעת אישור או קליטת הזמנה מול לקוח, חובה לבצע אימות מלא מול טאב "מילון_לוגיסטי"!
+3. עבור כל מוצר בהזמנה, חובה לציין את המק"ט המדויק ואת שם המוצר התקני מתוך המילון (לדוגמה: "[מק"ט 20001] בלה סומסום נקי").
+4. במידה והלקוח ציין שם כללי שיש לו מספר מוצרים/מק"טים תואמים במילון (כגון "מלט" שמתאים גם ל-[מק"ט 10002] שק מלט אפור 25 ק"ג וגם ל-[מק"ט 10001] שק מלט אפור 50 ק"ג, או "גבס"), חובה לשאול ולברר מול הלקוח:
+"לגבי המלט - האם התכוונת ל-[מק"ט 10002] שק מלט אפור 25 ק"ג או ל-[מק"ט 10001] שק מלט אפור 50 ק"ג?" ולשלוף את המוצרים התואמים מהמילון.
+5. השב בצורה טבעית, מקצועית, שירותית ובעברית בלבד.`;
 
   if (ai) {
     const candidateModels = Array.from(
@@ -458,11 +855,16 @@ app.post("/api/chat/respond", async (req, res) => {
           contents: contents,
           config: {
             systemInstruction: fullSystemInstruction,
-            temperature: 0.7,
+            temperature: 0.6,
           },
         });
 
-        const replyText = response.text || "קיבלתי את הודעתך, אשמח לעזור!";
+        let replyText = response.text || "קיבלתי את הודעתך, אשמח לעזור!";
+
+        // If this is an order message and Gemini didn't include SKUs [מק"ט, enforce our local verification summary
+        if (orderVerificationText && (!replyText.includes("מק\"ט") && !replyText.includes("מילון"))) {
+          replyText = orderVerificationText;
+        }
 
         return res.json({
           success: true,
@@ -488,6 +890,15 @@ app.post("/api/chat/respond", async (req, res) => {
   }
 
   // Smart Intelligent Local Fallback Response based on Knowledge Base & keywords
+  if (orderVerificationText) {
+    return res.json({
+      success: true,
+      text: orderVerificationText,
+      source: "logistic_dictionary_verifier",
+      timestamp: new Date().toISOString(),
+    });
+  }
+
   const lowerMsg = (userMessage || "").toLowerCase();
   let replyText = "";
 

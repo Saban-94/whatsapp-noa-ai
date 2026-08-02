@@ -23,6 +23,7 @@ import {
   Calendar,
   Moon,
   CheckCheck,
+  ShoppingCart,
   Sparkles,
   Link,
   Navigation,
@@ -36,6 +37,7 @@ import { HEBREW_WHATSAPP_TEMPLATES } from '../../data/whatsappTemplates';
 import { DEFAULT_QUICK_REPLIES } from '../../data/mockData';
 import { FormattedMessage } from '../Chat/FormattedMessage';
 import { playWhatsAppIncomingSound } from '../../utils/audio';
+import { LogisticDictionaryTab } from './LogisticDictionaryTab';
 
 interface AdminModalProps {
   isOpen: boolean;
@@ -64,7 +66,7 @@ export const AdminModal: React.FC<AdminModalProps> = ({
   onTestWebhook,
   onResetData,
 }) => {
-  const [activeTab, setActiveTab] = useState<'kpi' | 'crm' | 'prompt' | 'quick_replies' | 'hours' | 'webhook' | 'settings'>('kpi');
+  const [activeTab, setActiveTab] = useState<'kpi' | 'crm' | 'prompt' | 'quick_replies' | 'hours' | 'webhook' | 'settings' | 'logistic_dict'>('kpi');
   const [selectedCrmChatId, setSelectedCrmChatId] = useState<string>(chats[0]?.id || '');
   const [overrideText, setOverrideText] = useState('');
   const [isTestingWebhook, setIsTestingWebhook] = useState(false);
@@ -322,6 +324,18 @@ export const AdminModal: React.FC<AdminModalProps> = ({
           </button>
 
           <button
+            onClick={() => setActiveTab('logistic_dict')}
+            className={`px-4 py-3 text-xs font-semibold flex items-center gap-2 border-b-2 transition-colors ${
+              activeTab === 'logistic_dict'
+                ? 'border-[#00a884] text-[#00a884]'
+                : 'border-transparent text-[#8696a0] hover:text-[#e9edef]'
+            }`}
+          >
+            <Database className="w-4 h-4 text-emerald-400" />
+            מילון לוגיסטי (נרמול מוצרים ומק"טים)
+          </button>
+
+          <button
             onClick={() => setActiveTab('settings')}
             className={`px-4 py-3 text-xs font-semibold flex items-center gap-2 border-b-2 transition-colors ${
               activeTab === 'settings'
@@ -336,6 +350,9 @@ export const AdminModal: React.FC<AdminModalProps> = ({
 
         {/* Tab Body Content */}
         <div className="flex-1 overflow-y-auto p-6 space-y-6">
+          
+          {/* TAB: Logistic Dictionary & Product Normalizer */}
+          {activeTab === 'logistic_dict' && <LogisticDictionaryTab />}
           
           {/* TAB 1: KPIs & Overview */}
           {activeTab === 'kpi' && (
@@ -403,11 +420,14 @@ export const AdminModal: React.FC<AdminModalProps> = ({
 
           {/* TAB 2: CRM & Human Override */}
           {activeTab === 'crm' && (
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 h-[550px]">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 h-[580px]">
               {/* Left Column: Chat List Selection */}
               <div className="bg-[#202c33] rounded-xl border border-[#2a3942] overflow-hidden flex flex-col">
-                <div className="p-3 bg-[#182229] border-b border-[#2a3942]">
-                  <h3 className="text-xs font-bold text-[#8696a0]">רשימת צ'אטים פעילים ({chats.length})</h3>
+                <div className="p-3 bg-[#182229] border-b border-[#2a3942] flex items-center justify-between">
+                  <h3 className="text-xs font-bold text-[#8696a0]">רשימת תיקי לקוח ({chats.length})</h3>
+                  <span className="text-[10px] text-[#00a884] bg-[#00a884]/10 px-2 py-0.5 rounded-full font-mono">
+                    WhatsApp Listener Active
+                  </span>
                 </div>
                 <div className="flex-1 overflow-y-auto divide-y divide-[#2a3942]">
                   {chats.map((chat) => (
@@ -424,7 +444,12 @@ export const AdminModal: React.FC<AdminModalProps> = ({
                         className="w-10 h-10 rounded-full object-cover shrink-0"
                       />
                       <div className="min-w-0 flex-1">
-                        <p className="text-xs font-bold text-white truncate">{chat.contact.name}</p>
+                        <div className="flex items-center justify-between">
+                          <p className="text-xs font-bold text-white truncate">{chat.contact.name}</p>
+                          {chat.contact.company && (
+                            <span className="text-[9px] text-[#8696a0] truncate ml-1">{chat.contact.company}</span>
+                          )}
+                        </div>
                         <p className="text-[11px] text-[#8696a0] truncate">
                           {chat.messages[chat.messages.length - 1]?.text || 'אין הודעות'}
                         </p>
@@ -439,7 +464,7 @@ export const AdminModal: React.FC<AdminModalProps> = ({
                 </div>
               </div>
 
-              {/* Right Column: Live Transcript & Override Input */}
+              {/* Right Column: CRM Details & Transcript */}
               {selectedCrmChat && (
                 <div className="md:col-span-2 bg-[#202c33] rounded-xl border border-[#2a3942] flex flex-col overflow-hidden">
                   <div className="p-3 bg-[#182229] border-b border-[#2a3942] flex items-center justify-between">
@@ -448,10 +473,76 @@ export const AdminModal: React.FC<AdminModalProps> = ({
                       <span className="text-xs font-bold text-white">{selectedCrmChat.contact.name}</span>
                       <span className="text-[11px] text-[#8696a0]">({selectedCrmChat.contact.phone})</span>
                     </div>
-                    <span className="text-xs text-[#00a884] bg-[#00a884]/10 px-2 py-0.5 rounded-full">
-                      תמלול בזמן אמת
-                    </span>
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={async () => {
+                          try {
+                            const res = await fetch('/api/webhook/whatsapp', {
+                              method: 'POST',
+                              headers: { 'Content-Type': 'application/json' },
+                              body: JSON.stringify({
+                                contactName: selectedCrmChat.contact.name,
+                                phone: selectedCrmChat.contact.phone,
+                                message: 'היי, מזמין 10 שקי מלט אפור ו-2 בלות סומסום למחר',
+                              }),
+                            });
+                            const data = await res.json();
+                            alert(`הודעה נקלטה בשרת המקומי!\nתגובת Noa AI:\n${data.aiReplyText || 'עובד'}`);
+                          } catch (e: any) {
+                            alert('שגיאה בסנכרון מול השרת: ' + e?.message);
+                          }
+                        }}
+                        className="text-[11px] bg-[#00a884]/20 hover:bg-[#00a884]/30 text-[#00a884] px-2.5 py-1 rounded-lg flex items-center gap-1 font-semibold transition-colors"
+                      >
+                        <RefreshCw className="w-3 h-3 animate-spin-slow" />
+                        סימולציית האזנה מוואטסאפ (Local Webhook)
+                      </button>
+                    </div>
                   </div>
+
+                  {/* CRM Summary Bar */}
+                  <div className="bg-[#111b21] p-3 border-b border-[#2a3942] text-xs grid grid-cols-2 sm:grid-cols-4 gap-2">
+                    <div>
+                      <span className="text-[10px] text-[#8696a0] block">חברה / אתר:</span>
+                      <span className="font-semibold text-white truncate block">{selectedCrmChat.contact.company || 'לקוח פרטי'}</span>
+                    </div>
+                    <div>
+                      <span className="text-[10px] text-[#8696a0] block">כתובת:</span>
+                      <span className="font-semibold text-white truncate block">{selectedCrmChat.contact.address || 'לא צוינה'}</span>
+                    </div>
+                    <div>
+                      <span className="text-[10px] text-[#8696a0] block">אשראי / חוב:</span>
+                      <span className="font-semibold text-[#00a884] block">
+                        {selectedCrmChat.contact.creditLimit ? `₪${selectedCrmChat.contact.creditLimit.toLocaleString()}` : 'מאושר'}
+                      </span>
+                    </div>
+                    <div>
+                      <span className="text-[10px] text-[#8696a0] block">הערות מנהל:</span>
+                      <span className="font-semibold text-[#8696a0] truncate block">{selectedCrmChat.contact.notes || 'אין הערות'}</span>
+                    </div>
+                  </div>
+
+                  {/* Past Order History Section */}
+                  {selectedCrmChat.contact.orderHistory && selectedCrmChat.contact.orderHistory.length > 0 && (
+                    <div className="bg-[#182229] p-2.5 border-b border-[#2a3942]">
+                      <p className="text-[11px] font-bold text-amber-400 mb-1.5 flex items-center gap-1">
+                        <ShoppingCart className="w-3.5 h-3.5" />
+                        היסטוריית הזמנות ומידע משויך שנשלח ל-Noa AI:
+                      </p>
+                      <div className="flex gap-2 overflow-x-auto pb-1">
+                        {selectedCrmChat.contact.orderHistory.map((order) => (
+                          <div key={order.id} className="bg-[#111b21] border border-[#2a3942] rounded-lg p-2 text-[11px] shrink-0 min-w-[200px]">
+                            <div className="flex justify-between items-center mb-0.5">
+                              <span className="font-bold text-white">{order.id}</span>
+                              <span className="text-[9px] bg-[#00a884]/20 text-[#00a884] px-1.5 rounded">{order.status}</span>
+                            </div>
+                            <p className="text-[#8696a0] text-[10px]">{order.date}</p>
+                            <p className="text-white font-medium mt-1 truncate">{order.items}</p>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
 
                   {/* Messages Feed */}
                   <div className="flex-1 p-4 overflow-y-auto space-y-2 bg-[#111b21]">
