@@ -157,6 +157,9 @@ export interface ListenerEventPayload {
   phone: string;
   senderName: string;
   isGroup?: boolean;
+  groupId?: string;
+  mentionedJids?: string[];
+  parsedClientName?: string;
   incomingMessage: string;
   noaResponse?: string;
   sentToWhatsapp?: boolean;

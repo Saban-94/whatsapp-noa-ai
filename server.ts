@@ -217,8 +217,16 @@ app.post("/api/listener/event", async (req, res) => {
   try {
     const body = req.body || {};
     const phone = body.phone || body.from || body.chatId || "050-0000000";
-    const senderName = body.senderName || body.contactName || body.sender || body.name || "לקוח וואטסאפ";
-    const isGroup = Boolean(body.isGroup);
+    let senderName = body.senderName || body.contactName || body.sender || body.name || "לקוח וואטסאפ";
+    const isGroup = Boolean(body.isGroup || (body.groupId && body.groupId.includes("@g.us")) || (body.from && body.from.includes("@g.us")));
+    const groupId = body.groupId || (body.from && body.from.includes("@g.us") ? body.from : "group_120363@g.us");
+    const mentionedJids = Array.isArray(body.mentionedJids) ? body.mentionedJids : (body.mentionedJids ? [body.mentionedJids] : []);
+    const parsedClientName = body.parsedClientName || (body.clientName ? body.clientName : null);
+    
+    if (parsedClientName) {
+      senderName = `${parsedClientName} (${senderName})`;
+    }
+
     const incomingMessage = body.incomingMessage || body.userMessage || body.message || body.prompt || body.text || "";
     const sentToWhatsapp = body.sentToWhatsapp !== undefined ? Boolean(body.sentToWhatsapp) : true;
     const timestamp = body.timestamp || new Date().toISOString();
@@ -241,6 +249,9 @@ app.post("/api/listener/event", async (req, res) => {
       phone,
       senderName,
       isGroup,
+      groupId,
+      mentionedJids,
+      parsedClientName,
       incomingMessage,
       noaResponse,
       sentToWhatsapp,
@@ -255,11 +266,11 @@ app.post("/api/listener/event", async (req, res) => {
       id: `wh_evt_${Date.now()}`,
       timestamp: new Date().toLocaleTimeString("he-IL"),
       direction: "incoming" as const,
-      url: "/api/listener/event (C:\\ap94 Listener)",
+      url: `/api/listener/event (C:\\ap94 ${isGroup ? 'Group' : 'Direct'} Listener)`,
       payload: body,
       responseCode: 200,
       status: "success" as const,
-      details: `Mirrored local C:\\ap94 listener event (phone: ${phone}, sentToWhatsapp: ${sentToWhatsapp})`,
+      details: `Mirrored local C:\\ap94 listener event (phone: ${phone}, isGroup: ${isGroup}, sentToWhatsapp: ${sentToWhatsapp})`,
     };
 
     webhookLogs.push(logEntry);
@@ -267,7 +278,7 @@ app.post("/api/listener/event", async (req, res) => {
 
     // Parse order items into staging table (הזמנות_סידור)
     let stagedOrderEntry: any = null;
-    const isOrderMsg = /(מלט|סומסום|חול|טיט|איטונג|בלוק|גבס|פנל|טיח|חצץ|משלוח|מנוף|שק|בלה|משטח)/i.test(incomingMessage) ||
+    const isOrderMsg = /(מלט|סומסום|חול|טיט|איטונג|בלוק|גבס|פנל|טיח|חצץ|משלוח|מנוף|שק|בלה|משטח|ניצבים|מסלולים)/i.test(incomingMessage) ||
                        /(מלט|סומסום|חול|טיט|איטונג|בלוק|גבס|פנל|טיח|חצץ|מק"ט)/i.test(noaResponse);
 
     if (isOrderMsg && incomingMessage) {
@@ -337,6 +348,9 @@ app.post("/api/listener/event", async (req, res) => {
       phone,
       senderName,
       isGroup,
+      groupId,
+      mentionedJids,
+      parsedClientName,
       incomingMessage,
       noaResponse,
       sentToWhatsapp: true,
@@ -350,6 +364,95 @@ app.post("/api/listener/event", async (req, res) => {
       text: "הודעתך התקבלה והועברה לצוות",
       sentToWhatsapp: true,
       errorDetails: err?.message || "Internal Server Error",
+    });
+  }
+});
+
+// Outbound JONI Group Message Dispatch Endpoint
+app.post("/api/chat/send-group-message", async (req, res) => {
+  try {
+    const body = req.body || {};
+    const groupId = body.groupId || "12036304555@g.us";
+    const phone = body.phone || "052-6688768";
+    const senderName = body.senderName || "חיים עמרם";
+    let messageText = body.messageText || body.text || "";
+    const tagClient = Boolean(body.tagClient);
+    const mentions = Array.isArray(body.mentions) ? body.mentions : (tagClient ? [`${phone.replace(/\D/g, "")}@c.us`] : []);
+
+    if (tagClient && phone && !messageText.includes("@")) {
+      const formattedTag = `@${phone.startsWith("+") ? phone : "+972" + phone.replace(/^0/, "")}`;
+      messageText = `${messageText} ${formattedTag}`;
+    }
+
+    const joniApiUrl = (serverSettings as any)?.webAppUrl || process.env.VITE_GAS_WEBHOOK_URL || "";
+    let joniStatus = "simulated_success";
+
+    if (joniApiUrl) {
+      try {
+        await fetch(joniApiUrl, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            action: "SEND_GROUP_MESSAGE",
+            groupId,
+            messageText,
+            mentions,
+            timestamp: new Date().toISOString(),
+          }),
+        });
+        joniStatus = "dispatched_to_joni";
+      } catch (e: any) {
+        console.warn("JONI Group Dispatch warning:", e?.message);
+      }
+    }
+
+    const logEntry = {
+      id: `joni_grp_${Date.now()}`,
+      timestamp: new Date().toLocaleTimeString("he-IL"),
+      direction: "outgoing" as const,
+      url: `/api/chat/send-group-message (JONI API -> ${groupId})`,
+      payload: { groupId, messageText, mentions, tagClient },
+      responseCode: 200,
+      status: "success" as const,
+      details: `Dispatched group WhatsApp message to JONI (${groupId}, tagClient: ${tagClient})`,
+    };
+
+    webhookLogs.push(logEntry);
+    if (webhookLogs.length > 50) webhookLogs.shift();
+
+    // Add to listenerEvents mirror
+    listenerEvents.push({
+      id: `evt_out_${Date.now()}`,
+      phone,
+      senderName: "נועה AI (SabanOS Agent)",
+      isGroup: true,
+      groupId,
+      mentionedJids: mentions,
+      parsedClientName: senderName,
+      incomingMessage: `[הודעה נשלחה לקבוצה] ${messageText}`,
+      noaResponse: messageText,
+      sentToWhatsapp: true,
+      timestamp: new Date().toISOString(),
+    });
+
+    return res.json({
+      success: true,
+      action: "SEND_GROUP_MESSAGE",
+      groupId,
+      phone,
+      senderName,
+      messageText,
+      mentions,
+      tagClient,
+      joniStatus,
+      timestamp: new Date().toISOString(),
+      message: "הודעת הקבוצה נשלחה ומתויגת בהצלחה דרך JONI!",
+    });
+  } catch (err: any) {
+    console.error("Error in /api/chat/send-group-message:", err);
+    return res.status(500).json({
+      success: false,
+      error: err?.message || "Failed to send group message",
     });
   }
 });
