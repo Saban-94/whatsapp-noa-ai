@@ -22,6 +22,7 @@ export const SearchBar: React.FC<SearchBarProps> = ({
     { id: 'unread', label: 'שלא נקראו' },
     { id: 'favorites', label: 'מועדפים' },
     { id: 'groups', label: 'קבוצות' },
+    { id: 'archived', label: 'ארכיון 📦' },
   ];
 
   return (

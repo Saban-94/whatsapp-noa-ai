@@ -31,6 +31,7 @@ import {
   Copy,
   MessageSquareQuote,
   Download,
+  Archive,
 } from 'lucide-react';
 import { Chat, KnowledgeItem, AdminSettings, WebhookLog, QuickReply } from '../../types';
 import { HEBREW_WHATSAPP_TEMPLATES } from '../../data/whatsappTemplates';
@@ -51,6 +52,7 @@ interface AdminModalProps {
   onSendHumanOverrideMessage: (chatId: string, text: string) => void;
   onTestWebhook: () => Promise<void>;
   onResetData: () => void;
+  onRunAutoArchive?: () => void;
 }
 
 export const AdminModal: React.FC<AdminModalProps> = ({
@@ -65,6 +67,7 @@ export const AdminModal: React.FC<AdminModalProps> = ({
   onSendHumanOverrideMessage,
   onTestWebhook,
   onResetData,
+  onRunAutoArchive,
 }) => {
   const [activeTab, setActiveTab] = useState<'kpi' | 'crm' | 'prompt' | 'quick_replies' | 'hours' | 'webhook' | 'settings' | 'logistic_dict'>('kpi');
   const [selectedCrmChatId, setSelectedCrmChatId] = useState<string>(chats[0]?.id || '');
@@ -1215,6 +1218,82 @@ export const AdminModal: React.FC<AdminModalProps> = ({
           {/* TAB 5: Settings & Audio */}
           {activeTab === 'settings' && (
             <div className="space-y-6">
+              {/* Auto-Archiving Inactive Chats Settings Card */}
+              <div className="bg-[#202c33] p-5 rounded-xl border border-[#2a3942] space-y-4">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="p-2.5 bg-[#00a884]/20 rounded-xl text-[#00a884]">
+                      <Archive className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                        ארכוב אוטומטי של שיחות לא פעילות (Auto-Archive Inactive Chats)
+                        <span className="text-[10px] bg-[#00a884]/20 text-[#00a884] px-2 py-0.5 rounded-full font-bold">
+                          {chats.filter((c) => c.contact.isArchived).length} שיחות בארכיון
+                        </span>
+                      </h3>
+                      <p className="text-xs text-[#8696a0]">
+                        מעביר אוטומטית לארכיון שיחות שלא הייתה בהן הודעה חדשה למשך מספר ימים מוגדר.
+                      </p>
+                    </div>
+                  </div>
+
+                  <label className="relative inline-flex items-center cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={settings.autoArchiveEnabled ?? false}
+                      onChange={(e) => onUpdateSettings({ ...settings, autoArchiveEnabled: e.target.checked })}
+                      className="sr-only peer"
+                    />
+                    <div className="w-11 h-6 bg-[#111b21] peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:right-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-[#00a884]"></div>
+                  </label>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2 border-t border-[#2a3942]">
+                  <div className="bg-[#111b21] p-3.5 rounded-xl border border-[#2a3942] space-y-1.5">
+                    <label className="text-xs font-bold text-[#8696a0] flex items-center gap-1.5">
+                      <Clock className="w-3.5 h-3.5 text-[#00a884]" />
+                      מספר ימי חוסר פעילות לארכוב (ברירת מחדל: 7 ימים)
+                    </label>
+                    <input
+                      type="number"
+                      min={1}
+                      max={365}
+                      value={settings.autoArchiveDays ?? 7}
+                      onChange={(e) =>
+                        onUpdateSettings({
+                          ...settings,
+                          autoArchiveDays: Math.max(1, parseInt(e.target.value) || 7),
+                        })
+                      }
+                      className="w-full bg-[#202c33] border border-[#2a3942] rounded-lg px-3 py-2 text-sm text-white font-mono focus:outline-none focus:border-[#00a884]"
+                    />
+                  </div>
+
+                  <div className="bg-[#111b21] p-3.5 rounded-xl border border-[#2a3942] flex flex-col justify-between space-y-2">
+                    <div>
+                      <span className="text-xs font-bold text-[#8696a0] block mb-1">הפעלה ידנית מידית</span>
+                      <p className="text-[11px] text-[#8696a0]">
+                        סרוק שיחות לא פעילות לאחרונה והעבר אותן לארכיון לפי הגדרת הימים שנקבעה.
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (onRunAutoArchive) {
+                          onRunAutoArchive();
+                          alert('בדיקת ארכוב אוטומטי הופעלה בהצלחה!');
+                        }
+                      }}
+                      className="px-4 py-2 bg-[#00a884] hover:bg-[#008f70] text-[#111b21] font-bold text-xs rounded-lg flex items-center justify-center gap-2 transition-all cursor-pointer"
+                    >
+                      <Archive className="w-4 h-4" />
+                      <span>הפעל ארכוב אוטומטי כעת</span>
+                    </button>
+                  </div>
+                </div>
+              </div>
+
               <div className="bg-[#202c33] p-5 rounded-xl border border-[#2a3942] space-y-4">
                 <h3 className="text-sm font-bold text-[#00a884] flex items-center gap-2">
                   <Volume2 className="w-4 h-4" />

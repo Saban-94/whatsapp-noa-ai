@@ -71,6 +71,63 @@ export default function App() {
 
   const activeChat = chats.find((c) => c.id === activeChatId) || chats[0];
 
+  // Auto-Archive Inactive Chats Logic
+  const runAutoArchive = (currentChats: Chat[], days: number = 7) => {
+    const cutoffMs = Date.now() - days * 24 * 60 * 60 * 1000;
+    let modified = false;
+
+    const updated = currentChats.map((chat) => {
+      // Pinned chats are excluded from auto-archive
+      if (chat.contact.isPinned) return chat;
+
+      // Calculate last active timestamp
+      let lastTimeMs = new Date(chat.updatedAt).getTime();
+      if (isNaN(lastTimeMs) && chat.messages.length > 0) {
+        const lastMsg = chat.messages[chat.messages.length - 1];
+        if (lastMsg.dateStr) {
+          lastTimeMs = new Date(lastMsg.dateStr).getTime();
+        }
+      }
+
+      // If last message/activity is older than cutoffMs and not already archived
+      if (!isNaN(lastTimeMs) && lastTimeMs < cutoffMs) {
+        if (!chat.contact.isArchived) {
+          modified = true;
+          return {
+            ...chat,
+            contact: {
+              ...chat.contact,
+              isArchived: true,
+            },
+          };
+        }
+      }
+
+      return chat;
+    });
+
+    return { updated, modified };
+  };
+
+  // Run Auto-Archive on setting change or mount if enabled
+  useEffect(() => {
+    if (settings.autoArchiveEnabled) {
+      const days = settings.autoArchiveDays || 7;
+      const { updated, modified } = runAutoArchive(chats, days);
+      if (modified) {
+        setChats(updated);
+      }
+    }
+  }, [settings.autoArchiveEnabled, settings.autoArchiveDays]);
+
+  const handleManualAutoArchive = () => {
+    const days = settings.autoArchiveDays || 7;
+    const { updated, modified } = runAutoArchive(chats, days);
+    if (modified) {
+      setChats(updated);
+    }
+  };
+
   // Filtering chats based on search and tab chips
   const filteredChats = chats.filter((chat) => {
     const nameMatch = chat.contact.name.toLowerCase().includes(searchQuery.toLowerCase());
@@ -78,6 +135,13 @@ export default function App() {
     const textMatch = chat.messages.some((m) => m.text.toLowerCase().includes(searchQuery.toLowerCase()));
     
     if (!(nameMatch || phoneMatch || textMatch)) return false;
+
+    if (activeFilter === 'archived') {
+      return chat.contact.isArchived === true;
+    }
+
+    // Exclude archived chats from all active chat filters
+    if (chat.contact.isArchived) return false;
 
     if (activeFilter === 'unread') return chat.contact.unreadCount > 0;
     if (activeFilter === 'favorites') return chat.contact.isPinned;
@@ -118,6 +182,19 @@ export default function App() {
       prev.map((c) =>
         c.id === activeChat.id
           ? { ...c, contact: { ...c.contact, isPinned: !c.contact.isPinned } }
+          : c
+      )
+    );
+  };
+
+  // Toggle Archive for contact
+  const handleToggleArchiveContact = (targetChatId?: string) => {
+    const idToToggle = targetChatId || activeChat?.id;
+    if (!idToToggle) return;
+    setChats((prev) =>
+      prev.map((c) =>
+        c.id === idToToggle
+          ? { ...c, contact: { ...c.contact, isArchived: !c.contact.isArchived } }
           : c
       )
     );
@@ -663,6 +740,7 @@ export default function App() {
               onSelectChat={handleSelectChat}
               darkTheme={settings.darkTheme}
               enableBlueTicks={settings.enableBlueTicks}
+              activeFilter={activeFilter}
             />
           </div>
 
@@ -712,6 +790,7 @@ export default function App() {
                   onClose={() => setIsContactInfoOpen(false)}
                   onToggleAi={handleToggleAiForContact}
                   onTogglePin={handleTogglePinContact}
+                  onToggleArchive={handleToggleArchiveContact}
                   onUpdateContactBlueTicks={handleUpdateContactBlueTicks}
                   globalBlueTicks={settings.enableBlueTicks}
                   darkTheme={settings.darkTheme}
@@ -753,6 +832,7 @@ export default function App() {
         onSendHumanOverrideMessage={handleSendHumanOverrideMessage}
         onTestWebhook={handleTestWebhook}
         onResetData={handleResetData}
+        onRunAutoArchive={handleManualAutoArchive}
       />
 
       {/* ENTRANCE GATEWAY DOOR SPLIT MODAL */}

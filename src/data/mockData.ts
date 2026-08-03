@@ -56,6 +56,8 @@ export const INITIAL_SETTINGS: AdminSettings = {
   outsideHoursMode: "out_of_office_msg",
   outsideHoursMessage: "שלום! פנית אלינו מחוץ לשעות הפעילות (08:00 - 18:00). הודעתך נקלטה במערכת SabanOS ונשוב אליך בהקדם בשעות הפעילות! ⏰",
   quickReplies: DEFAULT_QUICK_REPLIES,
+  autoArchiveEnabled: false,
+  autoArchiveDays: 7,
 };
 
 export const INITIAL_KNOWLEDGE_BASE: KnowledgeItem[] = [

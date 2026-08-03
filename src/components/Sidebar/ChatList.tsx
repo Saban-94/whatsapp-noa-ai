@@ -1,5 +1,5 @@
 import React from 'react';
-import { Pin, Check, CheckCheck, Bot } from 'lucide-react';
+import { Pin, Check, CheckCheck, Bot, Archive } from 'lucide-react';
 import { Chat } from '../../types';
 
 interface ChatListProps {
@@ -8,6 +8,7 @@ interface ChatListProps {
   onSelectChat: (chatId: string) => void;
   darkTheme: boolean;
   enableBlueTicks?: boolean;
+  activeFilter?: string;
 }
 
 export const ChatList: React.FC<ChatListProps> = ({
@@ -16,11 +17,18 @@ export const ChatList: React.FC<ChatListProps> = ({
   onSelectChat,
   darkTheme,
   enableBlueTicks = true,
+  activeFilter,
 }) => {
   if (chats.length === 0) {
     return (
       <div className="flex-1 flex flex-col items-center justify-center p-6 text-center text-[#8696a0]">
-        <p className="text-sm">לא נמצאו שיחות תואמות לחיפוש</p>
+        <Archive className="w-8 h-8 mb-2 opacity-50 text-[#00a884]" />
+        <p className="text-sm font-semibold">
+          {activeFilter === 'archived' ? 'אין שיחות בארכיון' : 'לא נמצאו שיחות תואמות לחיפוש'}
+        </p>
+        {activeFilter === 'archived' && (
+          <p className="text-xs text-[#8696a0] mt-1">שיחות לא פעילות שהועברו לארכיון יופיעו כאן.</p>
+        )}
       </div>
     );
   }
@@ -93,8 +101,13 @@ export const ChatList: React.FC<ChatListProps> = ({
                   <span className="truncate">{lastMsg?.text || 'אין הודעות עדיין'}</span>
                 </p>
 
-                {/* Right side indicators: Pin & Unread Count */}
+                {/* Right side indicators: Archive, Pin & Unread Count */}
                 <div className="flex items-center gap-1.5 shrink-0">
+                  {contact.isArchived && (
+                    <span className="bg-[#00a884]/20 text-[#00a884] p-0.5 rounded" title="שיחה בארכיון">
+                      <Archive className="w-3 h-3" />
+                    </span>
+                  )}
                   {contact.isPinned && (
                     <Pin className="w-3.5 h-3.5 text-[#8696a0] transform rotate-45" />
                   )}

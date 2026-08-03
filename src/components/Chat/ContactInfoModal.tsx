@@ -1,5 +1,5 @@
 import React from 'react';
-import { X, Phone, Bot, Pin, BellOff, ShieldAlert, Tag, Edit3, CheckCheck, Check } from 'lucide-react';
+import { X, Phone, Bot, Pin, BellOff, ShieldAlert, Tag, Edit3, CheckCheck, Check, Archive } from 'lucide-react';
 import { Contact } from '../../types';
 
 interface ContactInfoModalProps {
@@ -8,6 +8,7 @@ interface ContactInfoModalProps {
   onClose: () => void;
   onToggleAi: () => void;
   onTogglePin: () => void;
+  onToggleArchive?: () => void;
   onUpdateContactBlueTicks?: (override: 'global' | 'enabled' | 'disabled') => void;
   globalBlueTicks?: boolean;
   darkTheme: boolean;
@@ -19,6 +20,7 @@ export const ContactInfoModal: React.FC<ContactInfoModalProps> = ({
   onClose,
   onToggleAi,
   onTogglePin,
+  onToggleArchive,
   onUpdateContactBlueTicks,
   globalBlueTicks = true,
   darkTheme,
@@ -162,6 +164,19 @@ export const ContactInfoModal: React.FC<ContactInfoModalProps> = ({
             </span>
             <span className="text-xs font-semibold text-[#00a884]">
               {contact.isPinned ? 'נעוץ' : 'לא נעוץ'}
+            </span>
+          </button>
+
+          <button
+            onClick={onToggleArchive}
+            className="w-full flex items-center justify-between p-3 rounded-lg hover:bg-[#202c33] text-sm text-right cursor-pointer"
+          >
+            <span className="flex items-center gap-3">
+              <Archive className="w-4 h-4 text-[#8696a0]" />
+              {contact.isArchived ? 'הוצא מתוך הארכיון' : 'העבר שיחה לארכיון'}
+            </span>
+            <span className={`text-xs font-semibold ${contact.isArchived ? 'text-amber-400' : 'text-[#8696a0]'}`}>
+              {contact.isArchived ? 'בארכיון' : 'פעיל'}
             </span>
           </button>
 

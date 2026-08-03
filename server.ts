@@ -241,8 +241,8 @@ app.post("/api/transcribe-voice", async (req, res) => {
       new Set([
         serverSettings.activeModel || "gemini-3.6-flash",
         "gemini-2.5-flash",
-        "gemini-2.0-flash",
-        "gemini-1.5-flash",
+        "gemini-flash-latest",
+        "gemini-3.1-flash-lite",
       ])
     );
 
@@ -277,7 +277,12 @@ app.post("/api/transcribe-voice", async (req, res) => {
             });
           }
         } catch (err: any) {
-          console.warn(`[Gemini Multimodal Voice Transcription issue on ${modelName}]:`, err?.message || err);
+          const isQuota = err?.status === 429 || err?.message?.includes("429") || err?.message?.includes("quota") || err?.message?.includes("RESOURCE_EXHAUSTED");
+          if (isQuota) {
+            console.warn(`[Gemini Quota Limit on ${modelName} for audio transcription] Using next candidate model or fallback.`);
+          } else {
+            console.warn(`[Gemini Multimodal Voice Transcription issue on ${modelName}]:`, err?.message || err);
+          }
         }
       }
     }
@@ -307,7 +312,12 @@ app.post("/api/transcribe-voice", async (req, res) => {
           });
         }
       } catch (err: any) {
-        console.warn(`[Gemini Contextual Voice Transcription issue on ${modelName}]:`, err?.message || err);
+        const isQuota = err?.status === 429 || err?.message?.includes("429") || err?.message?.includes("quota") || err?.message?.includes("RESOURCE_EXHAUSTED");
+        if (isQuota) {
+          console.warn(`[Gemini Quota Limit on ${modelName} for contextual transcription] Using next candidate model or fallback.`);
+        } else {
+          console.warn(`[Gemini Contextual Voice Transcription issue on ${modelName}]:`, err?.message || err);
+        }
       }
     }
   }
@@ -531,8 +541,8 @@ ${formattedHistoryText || "אין הודעות קודמות מפורטות, הל
       new Set([
         serverSettings.activeModel || "gemini-3.6-flash",
         "gemini-2.5-flash",
-        "gemini-2.0-flash",
-        "gemini-1.5-flash",
+        "gemini-flash-latest",
+        "gemini-3.1-flash-lite",
       ])
     );
 
@@ -829,8 +839,8 @@ ${kbContext}
       new Set([
         serverSettings.activeModel || "gemini-3.6-flash",
         "gemini-2.5-flash",
-        "gemini-2.0-flash",
-        "gemini-1.5-flash",
+        "gemini-flash-latest",
+        "gemini-3.1-flash-lite",
       ])
     );
 

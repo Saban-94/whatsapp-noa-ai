@@ -99,6 +99,8 @@ export interface AdminSettings {
   outsideHoursMode?: 'silent' | 'out_of_office_msg';
   outsideHoursMessage?: string;
   quickReplies?: QuickReply[];
+  autoArchiveEnabled?: boolean;
+  autoArchiveDays?: number;
 }
 
 export interface WebhookLog {
@@ -112,7 +114,7 @@ export interface WebhookLog {
   details?: string;
 }
 
-export type ChatFilter = 'all' | 'unread' | 'favorites' | 'groups';
+export type ChatFilter = 'all' | 'unread' | 'favorites' | 'groups' | 'archived';
 
 export interface LogisticProduct {
   sku: string;
