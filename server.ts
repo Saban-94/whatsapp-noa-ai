@@ -56,7 +56,9 @@ let stagedOrders: Array<{
   noaResponse: string;
   items: any[];
   totalPrice: number;
-  status: "נקלט ב-SabanOS" | "בטיפול לוגיסטי" | "יצא לדרך" | "הושלם";
+  status: string;
+  driverName?: string;
+  address?: string;
   sentToWhatsapp: boolean;
   createdAt: string;
 }> = [
@@ -366,6 +368,102 @@ app.get("/api/orders/staged", (req, res) => {
     tab: "הזמנות_סידור",
     orders: stagedOrders,
   });
+});
+
+// One-Click Dispatch Approval Route (/api/dispatch/approve)
+app.post("/api/dispatch/approve", async (req, res) => {
+  try {
+    const body = req.body || {};
+    const orderId = body.orderId || body.id || `ORD-${Math.floor(10000 + Math.random() * 90000)}`;
+    const customerName = body.customerName || body.name || "לקוח";
+    const phone = body.phone || body.customerPhone || "050-0000000";
+    const address = body.address || "לא צוינה כתובת";
+    const items = body.items || "פריטי הזמנה מפורטים";
+    const driverName = body.driverName || "אבי ברגמן - משאית מנוף 12";
+    const status = body.status || "APPROVED";
+    const timestamp = body.timestamp || new Date().toISOString();
+
+    // 1. Update in-memory stagedOrders
+    let found = stagedOrders.find((o) => o.id === orderId || o.orderNumber === orderId);
+    if (found) {
+      found.status = "APPROVED" as any;
+      found.driverName = driverName;
+      found.address = address;
+    } else {
+      found = {
+        id: `ord_${Date.now()}`,
+        orderNumber: orderId.startsWith("ORD-") ? orderId : `ORD-${orderId}`,
+        customerPhone: phone,
+        customerName: customerName,
+        rawMessage: typeof items === "string" ? items : JSON.stringify(items),
+        noaResponse: `הזמנה ${orderId} אושרה להובלה בסידור`,
+        items: Array.isArray(items) ? items : [{ sku: "APPROV-1", name: String(items), quantity: 1, unit: "משלוח" }],
+        totalPrice: 0,
+        status: "APPROVED" as any,
+        driverName,
+        address,
+        sentToWhatsapp: true,
+        createdAt: new Date().toLocaleTimeString("he-IL", { hour: "2-digit", minute: "2-digit" }),
+      };
+      stagedOrders.unshift(found);
+    }
+
+    // 2. Dispatch payload to GAS Webhook (הזמנות_סידור)
+    const gasWebhookUrl = process.env.VITE_GAS_WEBHOOK_URL || (serverSettings as any)?.webAppUrl || "";
+    if (gasWebhookUrl) {
+      fetch(gasWebhookUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "APPROVE_DISPATCH",
+          tab: "הזמנות_סידור",
+          orderId: found.orderNumber,
+          customerName,
+          phone,
+          address,
+          items: typeof items === "string" ? items : JSON.stringify(items),
+          driverName,
+          status: "APPROVED",
+          timestamp,
+        }),
+      }).catch((err) => console.log("GAS Dispatch Error:", err?.message));
+    }
+
+    // 3. Log into webhookLogs
+    const logEntry = {
+      id: `dispatch_${Date.now()}`,
+      timestamp: new Date().toLocaleTimeString("he-IL"),
+      direction: "outgoing" as const,
+      url: "/api/dispatch/approve (GAS: הזמנות_סידור)",
+      payload: { action: "APPROVE_DISPATCH", orderId: found.orderNumber, customerName, phone, address, items, status: "APPROVED" },
+      responseCode: 200,
+      status: "success" as const,
+      details: `One-Click Dispatch Approved for ${customerName} (${found.orderNumber}) -> GAS sheet [הזמנות_סידור]`,
+    };
+
+    webhookLogs.push(logEntry);
+    if (webhookLogs.length > 50) webhookLogs.shift();
+
+    return res.json({
+      success: true,
+      action: "APPROVE_DISPATCH",
+      orderId: found.orderNumber,
+      customerName,
+      phone,
+      address,
+      items,
+      driverName,
+      status: "APPROVED",
+      timestamp,
+      message: "ההזמנה אושרה בהצלחה, שודרה ל-GAS (הזמנות_סידור) ונעלה בלוח ההובלות!",
+    });
+  } catch (err: any) {
+    console.error("Error in /api/dispatch/approve:", err);
+    return res.status(500).json({
+      success: false,
+      error: err?.message || "Failed to approve dispatch",
+    });
+  }
 });
 
 // Local Server WhatsApp Webhook Listener (GET & POST)

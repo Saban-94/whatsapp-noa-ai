@@ -145,7 +145,9 @@ export interface StagedOrder {
   noaResponse: string;
   items: NormalizedOrderItem[];
   totalPrice: number;
-  status: 'נקלט ב-SabanOS' | 'בטיפול לוגיסטי' | 'יצא לדרך' | 'הושלם';
+  status: 'נקלט ב-SabanOS' | 'בטיפול לוגיסטי' | 'יצא לדרך' | 'הושלם' | 'APPROVED';
+  driverName?: string;
+  address?: string;
   sentToWhatsapp: boolean;
   createdAt: string;
 }
