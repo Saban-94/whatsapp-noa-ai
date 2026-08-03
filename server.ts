@@ -750,20 +750,32 @@ function verifyOrderLocally(userMessage: string, customerName: string = "לקו�
 // AI Chat Respond API Route
 app.post("/api/chat/respond", async (req, res) => {
   try {
-    const {
-      chatId,
-      contactName = "לקוח",
-      userMessage = "",
-      conversationHistory = [],
-      systemPrompt = serverSettings.systemPrompt,
-      knowledgeBase = [],
-      customerProfile = null,
-      orderHistory = [],
-    } = req.body || {};
+    const body = req.body || {};
+
+    const chatId = body.chatId || body.id || "default";
+    const contactName = body.contactName || body.sender || body.name || "לקוח";
+    const userMessage = body.userMessage || body.message || body.prompt || body.text || "";
+    const conversationHistory = Array.isArray(body.conversationHistory)
+      ? body.conversationHistory
+      : Array.isArray(body.history)
+      ? body.history
+      : Array.isArray(body.messages)
+      ? body.messages
+      : [];
+    const systemPrompt = body.systemPrompt || body.context || body.systemInstruction || serverSettings.systemPrompt;
+    const knowledgeBase = Array.isArray(body.knowledgeBase) ? body.knowledgeBase : [];
+    const customerProfile = body.customerProfile || null;
+    const orderHistory = Array.isArray(body.orderHistory) ? body.orderHistory : [];
+
+    // Check Gemini API key configuration
+    const apiKey = process.env.GEMINI_API_KEY;
+    if (!apiKey) {
+      console.warn("[/api/chat/respond] GEMINI_API_KEY is missing or empty in environment. Falling back to local smart engine.");
+    }
 
     const ai = getGeminiClient();
 
-    // Optionally trigger Google Apps Script Web App sync in background
+    // Trigger Google Apps Script Web App sync in background if enabled
     if (serverSettings.webhookSyncEnabled && serverSettings.webAppUrl) {
       fetch(serverSettings.webAppUrl, {
         method: "POST",
@@ -775,7 +787,7 @@ app.post("/api/chat/respond", async (req, res) => {
           message: userMessage,
           timestamp: new Date().toISOString(),
         }),
-      }).catch((err) => console.log("Google Apps Script sync background error:", err?.message));
+      }).catch((err) => console.log("Google Apps Script sync background warning:", err?.message));
     }
 
     // Check if message contains order items to verify against Logistic Dictionary (מילון_לוגיסטי)
@@ -785,15 +797,15 @@ app.post("/api/chat/respond", async (req, res) => {
     const kbContext = Array.isArray(knowledgeBase) && knowledgeBase.length > 0
       ? `\n\nמאגר מידע ועובדות עסקיות (SabanOS KB):\n` +
         knowledgeBase
-          .filter((k: any) => k.isEnabled !== false)
-          .map((k: any) => `[${k.category || "כללי"}] ${k.title}: ${k.content}`)
+          .filter((k: any) => k && k.isEnabled !== false)
+          .map((k: any) => `[${k.category || "כללי"}] ${k.title || ""}: ${k.content || ""}`)
           .join("\n")
       : "";
 
-    const dictionaryContext = logisticDictionary && logisticDictionary.length > 0
+    const dictionaryContext = Array.isArray(logisticDictionary) && logisticDictionary.length > 0
       ? `\n\nגליון 'מילון_לוגיסטי' ומק"טים רשמיים של SabanOS (עובדות בלבד!):\n` +
         logisticDictionary
-          .map((p) => `- מק"ט: ${p.sku} | שם מוצר תקני: "${p.productName}" | יחידה: ${p.unit} | מחיר: ₪${p.price} | כינויים: [${p.aliases.join(", ")}]`)
+          .map((p) => `- מק"ט: ${p.sku} | שם מוצר תקני: "${p.productName}" | יחידה: ${p.unit} | מחיר: ₪${p.price} | כינויים: [${(p.aliases || []).join(", ")}]`)
           .join("\n")
       : "";
 
@@ -848,17 +860,18 @@ ${kbContext}
       const contents: any[] = [];
       if (Array.isArray(conversationHistory)) {
         conversationHistory.slice(-10).forEach((msg: any) => {
-          const txt = (msg.text || "").trim();
+          if (!msg) return;
+          const txt = (msg.text || msg.content || "").toString().trim();
           if (txt) {
             contents.push({
-              role: msg.sender === "user" ? "user" : "model",
+              role: (msg.sender === "user" || msg.role === "user") ? "user" : "model",
               parts: [{ text: txt }],
             });
           }
         });
       }
 
-      const cleanUserMsg = (userMessage || "").trim() || "שלום";
+      const cleanUserMsg = (userMessage || "").toString().trim() || "שלום";
       if (contents.length === 0 || contents[contents.length - 1].role !== "user") {
         contents.push({
           role: "user",
@@ -879,7 +892,7 @@ ${kbContext}
 
           let replyText = response.text || "קיבלתי את הודעתך, אשמח לעזור!";
 
-          // If this is an order message and Gemini didn't include SKUs [מק"ט, enforce our local verification summary
+          // If this is an order message and Gemini didn't include SKUs [מק"ט], enforce local verification summary
           if (orderVerificationText && (!replyText.includes("מק\"ט") && !replyText.includes("מילון"))) {
             replyText = orderVerificationText;
           }
@@ -917,12 +930,12 @@ ${kbContext}
       });
     }
 
-    const lowerMsg = (userMessage || "").toLowerCase();
+    const lowerMsg = (userMessage || "").toString().toLowerCase();
     let replyText = "";
 
     // 1. Try Knowledge Base direct match
     if (Array.isArray(knowledgeBase) && knowledgeBase.length > 0) {
-      const activeKb = knowledgeBase.filter((k: any) => k.isEnabled !== false);
+      const activeKb = knowledgeBase.filter((k: any) => k && k.isEnabled !== false);
       const matchedKb = activeKb.find((k: any) => {
         const titleMatch = k.title && lowerMsg.includes(k.title.toLowerCase());
         const categoryMatch = k.category && lowerMsg.includes(k.category.toLowerCase());
@@ -958,11 +971,12 @@ ${kbContext}
       timestamp: new Date().toISOString(),
     });
   } catch (error: any) {
-    console.error("Error in /api/chat/respond:", error);
-    return res.json({
+    console.error("Unhandled exception in /api/chat/respond:", error?.stack || error?.message || error);
+    return res.status(200).json({
       success: true,
       text: "שלום! הודעתך נקלטה במערכת SabanOS. צוות השירות יחזור אליך בהקדם. 😊",
       source: "error_fallback",
+      errorDetails: error?.message || "Internal Server Error",
       timestamp: new Date().toISOString(),
     });
   }
