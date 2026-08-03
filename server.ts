@@ -1,6 +1,5 @@
 import express from "express";
 import path from "path";
-import { createServer as createViteServer } from "vite";
 import { GoogleGenAI } from "@google/genai";
 
 const app = express();
@@ -750,72 +749,73 @@ function verifyOrderLocally(userMessage: string, customerName: string = "לקו�
 
 // AI Chat Respond API Route
 app.post("/api/chat/respond", async (req, res) => {
-  const {
-    chatId,
-    contactName,
-    userMessage,
-    conversationHistory = [],
-    systemPrompt = serverSettings.systemPrompt,
-    knowledgeBase = [],
-    customerProfile = null,
-    orderHistory = [],
-  } = req.body;
+  try {
+    const {
+      chatId,
+      contactName = "לקוח",
+      userMessage = "",
+      conversationHistory = [],
+      systemPrompt = serverSettings.systemPrompt,
+      knowledgeBase = [],
+      customerProfile = null,
+      orderHistory = [],
+    } = req.body || {};
 
-  const ai = getGeminiClient();
+    const ai = getGeminiClient();
 
-  // Optionally trigger Google Apps Script Web App sync in background
-  if (serverSettings.webhookSyncEnabled && serverSettings.webAppUrl) {
-    fetch(serverSettings.webAppUrl, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        action: "incoming_message",
-        chatId,
-        sender: contactName,
-        message: userMessage,
-        timestamp: new Date().toISOString(),
-      }),
-    }).catch((err) => console.log("Google Apps Script sync background error:", err?.message));
-  }
+    // Optionally trigger Google Apps Script Web App sync in background
+    if (serverSettings.webhookSyncEnabled && serverSettings.webAppUrl) {
+      fetch(serverSettings.webAppUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "incoming_message",
+          chatId,
+          sender: contactName,
+          message: userMessage,
+          timestamp: new Date().toISOString(),
+        }),
+      }).catch((err) => console.log("Google Apps Script sync background error:", err?.message));
+    }
 
-  // Check if message contains order items to verify against Logistic Dictionary (מילון_לוגיסטי)
-  const orderVerificationText = verifyOrderLocally(userMessage, contactName);
+    // Check if message contains order items to verify against Logistic Dictionary (מילון_לוגיסטי)
+    const orderVerificationText = verifyOrderLocally(userMessage, contactName);
 
-  // Format Knowledge Base text for AI context
-  const kbContext = Array.isArray(knowledgeBase) && knowledgeBase.length > 0
-    ? `\n\nמאגר מידע ועובדות עסקיות (SabanOS KB):\n` +
-      knowledgeBase
-        .filter((k: any) => k.isEnabled !== false)
-        .map((k: any) => `[${k.category || "כללי"}] ${k.title}: ${k.content}`)
-        .join("\n")
-    : "";
+    // Format Knowledge Base text for AI context
+    const kbContext = Array.isArray(knowledgeBase) && knowledgeBase.length > 0
+      ? `\n\nמאגר מידע ועובדות עסקיות (SabanOS KB):\n` +
+        knowledgeBase
+          .filter((k: any) => k.isEnabled !== false)
+          .map((k: any) => `[${k.category || "כללי"}] ${k.title}: ${k.content}`)
+          .join("\n")
+      : "";
 
-  const dictionaryContext = logisticDictionary && logisticDictionary.length > 0
-    ? `\n\nגליון 'מילון_לוגיסטי' ומק"טים רשמיים של SabanOS (עובדות בלבד!):\n` +
-      logisticDictionary
-        .map((p) => `- מק"ט: ${p.sku} | שם מוצר תקני: "${p.productName}" | יחידה: ${p.unit} | מחיר: ₪${p.price} | כינויים: [${p.aliases.join(", ")}]`)
-        .join("\n")
-    : "";
+    const dictionaryContext = logisticDictionary && logisticDictionary.length > 0
+      ? `\n\nגליון 'מילון_לוגיסטי' ומק"טים רשמיים של SabanOS (עובדות בלבד!):\n` +
+        logisticDictionary
+          .map((p) => `- מק"ט: ${p.sku} | שם מוצר תקני: "${p.productName}" | יחידה: ${p.unit} | מחיר: ₪${p.price} | כינויים: [${p.aliases.join(", ")}]`)
+          .join("\n")
+      : "";
 
-  // Format Customer CRM profile & Order History context
-  const crmContext = customerProfile
-    ? `\n\nתיק לקוח CRM מיועד (${contactName}):\n` +
-      `- טלפון: ${customerProfile.phone || "לא צוין"}\n` +
-      `- חברה/עסק: ${customerProfile.company || "פרטי"}\n` +
-      `- כתובת/אתר: ${customerProfile.address || "לא צוינה"}\n` +
-      `- מסגרת אשראי/חוב: ${customerProfile.creditLimit ? `₪${customerProfile.creditLimit}` : "תקין"}\n` +
-      `- הערות מנהל: ${customerProfile.notes || "אין הערות"}`
-    : "";
+    // Format Customer CRM profile & Order History context
+    const crmContext = customerProfile
+      ? `\n\nתיק לקוח CRM מיועד (${contactName}):\n` +
+        `- טלפון: ${customerProfile.phone || "לא צוין"}\n` +
+        `- חברה/עסק: ${customerProfile.company || "פרטי"}\n` +
+        `- כתובת/אתר: ${customerProfile.address || "לא צוינה"}\n` +
+        `- מסגרת אשראי/חוב: ${customerProfile.creditLimit ? `₪${customerProfile.creditLimit}` : "תקין"}\n` +
+        `- הערות מנהל: ${customerProfile.notes || "אין הערות"}`
+      : "";
 
-  const historyContext = Array.isArray(orderHistory) && orderHistory.length > 0
-    ? `\n\nהיסטוריית הזמנות קודמות של הלקוח (${contactName}):\n` +
-      orderHistory
-        .slice(-10)
-        .map((o: any) => `- הזמנה #${o.id || "ORD"} [תאריך ${o.date || "לאחרונה"}]: ${o.items || o.skuDetails || "פריטים"} (סה"כ: ₪${o.total || 0}, סטאטוס: ${o.status || "בטיפול"})`)
-        .join("\n")
-    : "";
+    const historyContext = Array.isArray(orderHistory) && orderHistory.length > 0
+      ? `\n\nהיסטוריית הזמנות קודמות של הלקוח (${contactName}):\n` +
+        orderHistory
+          .slice(-10)
+          .map((o: any) => `- הזמנה #${o.id || "ORD"} [תאריך ${o.date || "לאחרונה"}]: ${o.items || o.skuDetails || "פריטים"} (סה"כ: ₪${o.total || 0}, סטאטוס: ${o.status || "בטיפול"})`)
+          .join("\n")
+      : "";
 
-  const fullSystemInstruction = `${systemPrompt}
+    const fullSystemInstruction = `${systemPrompt}
 
 ${crmContext}
 
@@ -834,131 +834,149 @@ ${kbContext}
 "לגבי המלט - האם התכוונת ל-[מק"ט 10002] שק מלט אפור 25 ק"ג או ל-[מק"ט 10001] שק מלט אפור 50 ק"ג?" ולשלוף את המוצרים התואמים מהמילון.
 5. השב בצורה טבעית, מקצועית, שירותית ובעברית בלבד.`;
 
-  if (ai) {
-    const candidateModels = Array.from(
-      new Set([
-        serverSettings.activeModel || "gemini-3.6-flash",
-        "gemini-2.5-flash",
-        "gemini-flash-latest",
-        "gemini-3.1-flash-lite",
-      ])
-    );
+    if (ai) {
+      const candidateModels = Array.from(
+        new Set([
+          serverSettings.activeModel || "gemini-3.6-flash",
+          "gemini-2.5-flash",
+          "gemini-flash-latest",
+          "gemini-3.1-flash-lite",
+        ])
+      );
 
-    // Build conversation turns for Gemini
-    const contents = conversationHistory.slice(-10).map((msg: any) => ({
-      role: msg.sender === "user" ? "user" : "model",
-      parts: [{ text: msg.text || "" }],
-    }));
-
-    // Append current user message if not included
-    if (contents.length === 0 || contents[contents.length - 1].role !== "user") {
-      contents.push({
-        role: "user",
-        parts: [{ text: userMessage }],
-      });
-    }
-
-    for (const modelName of candidateModels) {
-      try {
-        const response = await ai.models.generateContent({
-          model: modelName,
-          contents: contents,
-          config: {
-            systemInstruction: fullSystemInstruction,
-            temperature: 0.6,
-          },
+      // Build conversation turns for Gemini safely
+      const contents: any[] = [];
+      if (Array.isArray(conversationHistory)) {
+        conversationHistory.slice(-10).forEach((msg: any) => {
+          const txt = (msg.text || "").trim();
+          if (txt) {
+            contents.push({
+              role: msg.sender === "user" ? "user" : "model",
+              parts: [{ text: txt }],
+            });
+          }
         });
+      }
 
-        let replyText = response.text || "קיבלתי את הודעתך, אשמח לעזור!";
-
-        // If this is an order message and Gemini didn't include SKUs [מק"ט, enforce our local verification summary
-        if (orderVerificationText && (!replyText.includes("מק\"ט") && !replyText.includes("מילון"))) {
-          replyText = orderVerificationText;
-        }
-
-        return res.json({
-          success: true,
-          text: replyText,
-          source: "gemini",
-          modelUsed: modelName,
-          timestamp: new Date().toISOString(),
+      const cleanUserMsg = (userMessage || "").trim() || "שלום";
+      if (contents.length === 0 || contents[contents.length - 1].role !== "user") {
+        contents.push({
+          role: "user",
+          parts: [{ text: cleanUserMsg }],
         });
-      } catch (err: any) {
-        const isQuotaError =
-          err?.status === 429 ||
-          err?.message?.includes("429") ||
-          err?.message?.includes("quota") ||
-          err?.message?.includes("RESOURCE_EXHAUSTED");
+      }
 
-        if (isQuotaError) {
-          console.warn(`[Gemini Quota Exceeded on ${modelName}] Trying next model or local engine...`);
-        } else {
-          console.warn(`[Gemini Call Issue on ${modelName}]:`, err?.message || err);
+      for (const modelName of candidateModels) {
+        try {
+          const response = await ai.models.generateContent({
+            model: modelName,
+            contents: contents,
+            config: {
+              systemInstruction: fullSystemInstruction,
+              temperature: 0.6,
+            },
+          });
+
+          let replyText = response.text || "קיבלתי את הודעתך, אשמח לעזור!";
+
+          // If this is an order message and Gemini didn't include SKUs [מק"ט, enforce our local verification summary
+          if (orderVerificationText && (!replyText.includes("מק\"ט") && !replyText.includes("מילון"))) {
+            replyText = orderVerificationText;
+          }
+
+          return res.json({
+            success: true,
+            text: replyText,
+            source: "gemini",
+            modelUsed: modelName,
+            timestamp: new Date().toISOString(),
+          });
+        } catch (err: any) {
+          const isQuotaError =
+            err?.status === 429 ||
+            err?.message?.includes("429") ||
+            err?.message?.includes("quota") ||
+            err?.message?.includes("RESOURCE_EXHAUSTED");
+
+          if (isQuotaError) {
+            console.warn(`[Gemini Quota Exceeded on ${modelName}] Trying next model or local engine...`);
+          } else {
+            console.warn(`[Gemini Call Issue on ${modelName}]:`, err?.message || err);
+          }
         }
       }
     }
-  }
 
-  // Smart Intelligent Local Fallback Response based on Knowledge Base & keywords
-  if (orderVerificationText) {
+    // Smart Intelligent Local Fallback Response based on Knowledge Base & keywords
+    if (orderVerificationText) {
+      return res.json({
+        success: true,
+        text: orderVerificationText,
+        source: "logistic_dictionary_verifier",
+        timestamp: new Date().toISOString(),
+      });
+    }
+
+    const lowerMsg = (userMessage || "").toLowerCase();
+    let replyText = "";
+
+    // 1. Try Knowledge Base direct match
+    if (Array.isArray(knowledgeBase) && knowledgeBase.length > 0) {
+      const activeKb = knowledgeBase.filter((k: any) => k.isEnabled !== false);
+      const matchedKb = activeKb.find((k: any) => {
+        const titleMatch = k.title && lowerMsg.includes(k.title.toLowerCase());
+        const categoryMatch = k.category && lowerMsg.includes(k.category.toLowerCase());
+        return titleMatch || categoryMatch;
+      });
+
+      if (matchedKb) {
+        replyText = `מידע ממאגר SabanOS בנושא *${matchedKb.title}*:\n${matchedKb.content}`;
+      }
+    }
+
+    // 2. Keyword based fallback
+    if (!replyText) {
+      if (lowerMsg.includes("תפריט") || lowerMsg.includes("אוכל") || lowerMsg.includes("מנה")) {
+        replyText = "בוודאי! התפריט היומי שלנו מעודכן בסינכרון מול SabanOS. תוכל לבחור בין מנות ראשונות, עיקריות וקינוחים. תרצה שאשלח לך את מחירון המנות?";
+      } else if (lowerMsg.includes("שעות") || lowerMsg.includes("מתי פתוח") || lowerMsg.includes("זמנים")) {
+        replyText = "אנחנו פתוחים בימים א'-ה' בין השעות 08:00 ל-18:00, ובימי שישי עד 13:00. נשמח לראותכם!";
+      } else if (lowerMsg.includes("הזמנה") || lowerMsg.includes("משלוח") || lowerMsg.includes("ציוד")) {
+        replyText = "שלום! *ההזמנה שלך נקלטה במערכת SabanOS* 🚛\nצוות הלוגיסטיקה מכין את המשלוח ויוצר קשר לתיאום סופי.";
+      } else if (lowerMsg.includes("מיקום") || lowerMsg.includes("כתובת") || lowerMsg.includes("ניווט") || lowerMsg.includes("waze")) {
+        replyText = "📍 הסניף המרכזי שלנו ממוקם ב*רחוב הברזל 11, תל אביב*. לחץ לניווט ב-Waze: https://waze.com/ul?ll=32.1092,34.8389&navigate=yes 🗺️";
+      } else if (lowerMsg.includes("מחיר") || lowerMsg.includes("עלות") || lowerMsg.includes("כמה עולה")) {
+        replyText = "המחירון המלא מעודכן במערכת SabanOS. תרצה לקבל פירוט והצעת מחיר מותאמת אישית?";
+      } else {
+        replyText = "שלום! הודעתך נקלטה במערכת SabanOS. נשמח לסייע לך בכל שאלה לגבי משלוחים, הזמנות ומידע נוסף! 😊";
+      }
+    }
+
     return res.json({
       success: true,
-      text: orderVerificationText,
-      source: "logistic_dictionary_verifier",
+      text: replyText,
+      source: "smart_fallback",
+      timestamp: new Date().toISOString(),
+    });
+  } catch (error: any) {
+    console.error("Error in /api/chat/respond:", error);
+    return res.json({
+      success: true,
+      text: "שלום! הודעתך נקלטה במערכת SabanOS. צוות השירות יחזור אליך בהקדם. 😊",
+      source: "error_fallback",
       timestamp: new Date().toISOString(),
     });
   }
-
-  const lowerMsg = (userMessage || "").toLowerCase();
-  let replyText = "";
-
-  // 1. Try Knowledge Base direct match
-  if (Array.isArray(knowledgeBase) && knowledgeBase.length > 0) {
-    const activeKb = knowledgeBase.filter((k: any) => k.isEnabled !== false);
-    const matchedKb = activeKb.find((k: any) => {
-      const titleMatch = k.title && lowerMsg.includes(k.title.toLowerCase());
-      const categoryMatch = k.category && lowerMsg.includes(k.category.toLowerCase());
-      return titleMatch || categoryMatch;
-    });
-
-    if (matchedKb) {
-      replyText = `מידע ממאגר SabanOS בנושא *${matchedKb.title}*:\n${matchedKb.content}`;
-    }
-  }
-
-  // 2. Keyword based fallback
-  if (!replyText) {
-    if (lowerMsg.includes("תפריט") || lowerMsg.includes("אוכל") || lowerMsg.includes("מנה")) {
-      replyText = "בוודאי! התפריט היומי שלנו מעודכן בסינכרון מול SabanOS. תוכל לבחור בין מנות ראשונות, עיקריות וקינוחים. תרצה שאשלח לך את מחירון המנות?";
-    } else if (lowerMsg.includes("שעות") || lowerMsg.includes("מתי פתוח") || lowerMsg.includes("זמנים")) {
-      replyText = "אנחנו פתוחים בימים א'-ה' בין השעות 08:00 ל-18:00, ובימי שישי עד 13:00. נשמח לראותכם!";
-    } else if (lowerMsg.includes("הזמנה") || lowerMsg.includes("משלוח") || lowerMsg.includes("ציוד")) {
-      replyText = "שלום! *ההזמנה שלך נקלטה במערכת SabanOS* 🚛\nצוות הלוגיסטיקה מכין את המשלוח ויוצר קשר לתיאום סופי.";
-    } else if (lowerMsg.includes("מיקום") || lowerMsg.includes("כתובת") || lowerMsg.includes("ניווט") || lowerMsg.includes("waze")) {
-      replyText = "📍 הסניף המרכזי שלנו ממוקם ב*רחוב הברזל 11, תל אביב*. לחץ לניווט ב-Waze: https://waze.com/ul?ll=32.1092,34.8389&navigate=yes 🗺️";
-    } else if (lowerMsg.includes("מחיר") || lowerMsg.includes("עלות") || lowerMsg.includes("כמה עולה")) {
-      replyText = "המחירון המלא מעודכן במערכת SabanOS. תרצה לקבל פירוט והצעת מחיר מותאמת אישית?";
-    } else {
-      replyText = "שלום! הודעתך נקלטה במערכת SabanOS. נשמח לסייע לך בכל שאלה לגבי משלוחים, הזמנות ומידע נוסף! 😊";
-    }
-  }
-
-  res.json({
-    success: true,
-    text: replyText,
-    source: "smart_fallback",
-    timestamp: new Date().toISOString(),
-  });
 });
 
 async function startServer() {
-  if (process.env.NODE_ENV !== "production") {
+  if (process.env.NODE_ENV !== "production" && !process.env.VERCEL) {
+    const { createServer: createViteServer } = await import("vite");
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: "spa",
     });
     app.use(vite.middlewares);
-  } else {
+  } else if (!process.env.VERCEL) {
     const distPath = path.join(process.cwd(), "dist");
     app.use(express.static(distPath));
     app.get("*", (req, res) => {
