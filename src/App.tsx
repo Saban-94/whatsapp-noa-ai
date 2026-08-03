@@ -10,7 +10,8 @@ import {
   saveStoredLogs,
   resetAllData,
 } from './utils/storage';
-import { Chat, KnowledgeItem, AdminSettings, WebhookLog, ChatFilter, Message } from './types';
+import { Chat, KnowledgeItem, AdminSettings, WebhookLog, ChatFilter, Message, StagedOrder } from './types';
+import { INITIAL_MOCK_STAGED_ORDERS } from './components/Admin/OrdersStagingTab';
 import { SidebarHeader } from './components/Sidebar/SidebarHeader';
 import { SearchBar } from './components/Sidebar/SearchBar';
 import { ChatList } from './components/Sidebar/ChatList';
@@ -31,6 +32,7 @@ export default function App() {
   const [settings, setSettings] = useState<AdminSettings>(loadStoredSettings);
   const [knowledgeBase, setKnowledgeBase] = useState<KnowledgeItem[]>(loadStoredKnowledgeBase);
   const [webhookLogs, setWebhookLogs] = useState<WebhookLog[]>(loadStoredLogs);
+  const [stagedOrders, setStagedOrders] = useState<StagedOrder[]>(INITIAL_MOCK_STAGED_ORDERS);
 
   const [activeChatId, setActiveChatId] = useState<string>(chats[0]?.id || 'chat_noa_ai');
   const [searchQuery, setSearchQuery] = useState('');
@@ -43,6 +45,123 @@ export default function App() {
   const [isGatewayOpen, setIsGatewayOpen] = useState(true);
   const [isTyping, setIsTyping] = useState(false);
   const [mobileShowChat, setMobileShowChat] = useState(false);
+
+  // Poll server for live C:\ap94 listener events, staged orders & logs
+  useEffect(() => {
+    const interval = setInterval(async () => {
+      try {
+        const eventsRes = await fetch('/api/listener/events');
+        if (eventsRes.ok) {
+          const eventsData = await eventsRes.json();
+          if (eventsData.stagedOrders && Array.isArray(eventsData.stagedOrders) && eventsData.stagedOrders.length > 0) {
+            setStagedOrders((prev) => {
+              const combined = [...eventsData.stagedOrders, ...prev];
+              const uniqueMap = new Map();
+              combined.forEach((item) => uniqueMap.set(item.id, item));
+              return Array.from(uniqueMap.values());
+            });
+          }
+        }
+        const settingsRes = await fetch('/api/admin/settings');
+        if (settingsRes.ok) {
+          const sData = await settingsRes.json();
+          if (sData.logs && Array.isArray(sData.logs) && sData.logs.length > 0) {
+            setWebhookLogs(sData.logs);
+          }
+        }
+      } catch (e) {
+        // Silently handle offline/background sync
+      }
+    }, 4000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const handleSimulateListenerEvent = async (phone: string, senderName: string, messageText: string) => {
+    try {
+      const res = await fetch('/api/listener/event', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          phone,
+          senderName,
+          isGroup: false,
+          incomingMessage: messageText,
+          sentToWhatsapp: true,
+        }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        let targetChat = chats.find((c) => c.contact.phone === phone || c.contact.name.includes(senderName));
+        const timeStr = new Date().toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' });
+
+        if (!targetChat) {
+          const newChatId = `chat_${Date.now()}`;
+          targetChat = {
+            id: newChatId,
+            updatedAt: new Date().toISOString(),
+            contact: {
+              id: `c_${Date.now()}`,
+              name: senderName,
+              phone,
+              avatar: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150&auto=format&fit=crop&q=80',
+              isOnline: true,
+              isAiManaged: true,
+              unreadCount: 0,
+            },
+            messages: [],
+          };
+        }
+
+        const userMsg: Message = {
+          id: `msg_in_${Date.now()}`,
+          chatId: targetChat.id,
+          sender: 'user',
+          text: messageText,
+          timestamp: timeStr,
+          status: 'read',
+        };
+
+        const aiMsg: Message = {
+          id: `msg_ai_${Date.now()}`,
+          chatId: targetChat.id,
+          sender: 'ai',
+          text: data.noaResponse || 'הודעתך התקבלה והועברה לצוות',
+          timestamp: timeStr,
+          status: 'read',
+        };
+
+        setChats((prev) => {
+          const exists = prev.some((c) => c.id === targetChat!.id);
+          if (exists) {
+            return prev.map((c) =>
+              c.id === targetChat!.id
+                ? { ...c, updatedAt: new Date().toISOString(), messages: [...c.messages, userMsg, aiMsg] }
+                : c
+            );
+          } else {
+            return [{ ...targetChat!, messages: [userMsg, aiMsg] }, ...prev];
+          }
+        });
+
+        if (data.stagedOrder) {
+          setStagedOrders((prev) => [data.stagedOrder, ...prev]);
+        }
+
+        playWhatsAppIncomingSound();
+        sendNotification(`אירוע משרת מקומי C:\\ap94 (${senderName})`, {
+          body: data.noaResponse || 'תגובת Noa AI נקלטה',
+        });
+      }
+    } catch (err) {
+      console.warn('Simulation error:', err);
+    }
+  };
+
+  const handleUpdateOrderStatus = (orderId: string, newStatus: StagedOrder['status']) => {
+    setStagedOrders((prev) =>
+      prev.map((o) => (o.id === orderId ? { ...o, status: newStatus } : o))
+    );
+  };
 
   // Sync state to LocalStorage
   useEffect(() => {
@@ -856,6 +975,9 @@ export default function App() {
         knowledgeBase={knowledgeBase}
         onUpdateKnowledgeBase={setKnowledgeBase}
         webhookLogs={webhookLogs}
+        stagedOrders={stagedOrders}
+        onUpdateOrderStatus={handleUpdateOrderStatus}
+        onSimulateListenerEvent={handleSimulateListenerEvent}
         onSendHumanOverrideMessage={handleSendHumanOverrideMessage}
         onTestWebhook={handleTestWebhook}
         onResetData={handleResetData}

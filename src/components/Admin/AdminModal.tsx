@@ -33,12 +33,13 @@ import {
   Download,
   Archive,
 } from 'lucide-react';
-import { Chat, KnowledgeItem, AdminSettings, WebhookLog, QuickReply } from '../../types';
+import { Chat, KnowledgeItem, AdminSettings, WebhookLog, QuickReply, StagedOrder } from '../../types';
 import { HEBREW_WHATSAPP_TEMPLATES } from '../../data/whatsappTemplates';
 import { DEFAULT_QUICK_REPLIES } from '../../data/mockData';
 import { FormattedMessage } from '../Chat/FormattedMessage';
 import { playWhatsAppIncomingSound } from '../../utils/audio';
 import { LogisticDictionaryTab } from './LogisticDictionaryTab';
+import { OrdersStagingTab } from './OrdersStagingTab';
 
 interface AdminModalProps {
   isOpen: boolean;
@@ -49,6 +50,9 @@ interface AdminModalProps {
   knowledgeBase: KnowledgeItem[];
   onUpdateKnowledgeBase: (newKb: KnowledgeItem[]) => void;
   webhookLogs: WebhookLog[];
+  stagedOrders?: StagedOrder[];
+  onUpdateOrderStatus?: (orderId: string, newStatus: StagedOrder['status']) => void;
+  onSimulateListenerEvent?: (phone: string, name: string, message: string) => Promise<void>;
   onSendHumanOverrideMessage: (chatId: string, text: string) => void;
   onTestWebhook: () => Promise<void>;
   onResetData: () => void;
@@ -64,12 +68,16 @@ export const AdminModal: React.FC<AdminModalProps> = ({
   knowledgeBase,
   onUpdateKnowledgeBase,
   webhookLogs,
+  stagedOrders = [],
+  onUpdateOrderStatus,
+  onSimulateListenerEvent,
   onSendHumanOverrideMessage,
   onTestWebhook,
   onResetData,
   onRunAutoArchive,
 }) => {
-  const [activeTab, setActiveTab] = useState<'kpi' | 'crm' | 'prompt' | 'quick_replies' | 'hours' | 'webhook' | 'settings' | 'logistic_dict'>('kpi');
+  const [activeTab, setActiveTab] = useState<'kpi' | 'crm' | 'prompt' | 'quick_replies' | 'hours' | 'webhook' | 'settings' | 'logistic_dict' | 'orders_staging'>('orders_staging');
+
   const [selectedCrmChatId, setSelectedCrmChatId] = useState<string>(chats[0]?.id || '');
   const [overrideText, setOverrideText] = useState('');
   const [isTestingWebhook, setIsTestingWebhook] = useState(false);
@@ -327,6 +335,18 @@ export const AdminModal: React.FC<AdminModalProps> = ({
           </button>
 
           <button
+            onClick={() => setActiveTab('orders_staging')}
+            className={`px-4 py-3 text-xs font-semibold flex items-center gap-2 border-b-2 transition-colors ${
+              activeTab === 'orders_staging'
+                ? 'border-[#00a884] text-[#00a884]'
+                : 'border-transparent text-[#8696a0] hover:text-[#e9edef]'
+            }`}
+          >
+            <ShoppingCart className="w-4 h-4 text-[#00a884]" />
+            הזמנות סידור (Staging Table)
+          </button>
+
+          <button
             onClick={() => setActiveTab('logistic_dict')}
             className={`px-4 py-3 text-xs font-semibold flex items-center gap-2 border-b-2 transition-colors ${
               activeTab === 'logistic_dict'
@@ -354,6 +374,15 @@ export const AdminModal: React.FC<AdminModalProps> = ({
         {/* Tab Body Content */}
         <div className="flex-1 overflow-y-auto p-6 space-y-6">
           
+          {/* TAB: Orders Staging Table (הזמנות_סידור) */}
+          {activeTab === 'orders_staging' && (
+            <OrdersStagingTab
+              stagedOrders={stagedOrders}
+              onUpdateOrderStatus={onUpdateOrderStatus}
+              onSimulateListenerEvent={onSimulateListenerEvent}
+            />
+          )}
+
           {/* TAB: Logistic Dictionary & Product Normalizer */}
           {activeTab === 'logistic_dict' && <LogisticDictionaryTab />}
           

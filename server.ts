@@ -36,6 +36,49 @@ let webhookLogs: Array<{
   details?: string;
 }> = [];
 
+let listenerEvents: Array<{
+  id: string;
+  phone: string;
+  senderName: string;
+  isGroup: boolean;
+  incomingMessage: string;
+  noaResponse: string;
+  sentToWhatsapp: boolean;
+  timestamp: string;
+}> = [];
+
+let stagedOrders: Array<{
+  id: string;
+  orderNumber: string;
+  customerPhone: string;
+  customerName: string;
+  rawMessage: string;
+  noaResponse: string;
+  items: any[];
+  totalPrice: number;
+  status: "נקלט ב-SabanOS" | "בטיפול לוגיסטי" | "יצא לדרך" | "הושלם";
+  sentToWhatsapp: boolean;
+  createdAt: string;
+}> = [
+  {
+    id: "ord_1001",
+    orderNumber: "ORD-90821",
+    customerPhone: "052-4455667",
+    customerName: "משה כהן - אתר הרצליה",
+    rawMessage: "שלום נועה, צריך בדחיפות 3 בלות סומסום, בלת חול, מנוף לקומה 2",
+    noaResponse: `שלום משה כהן - אתר הרצליה! 👋\n*ההזמנה שלך נקלטה ופוענחה בהצלחה במערכת SabanOS:* 🚛\n\n• [מק"ט 20001] בלה סומסום נקי — 3 בלה (₪330)\n• [מק"ט 20002] בלה חול מחצבה (טיט) — 1 בלה (₪105)\n• [מק"ט GENERIC-99] מנוף לקומה 2 — 1 יחידה\n\n*סה"כ משוער:* ₪435\n\nצוות הלוגיסטיקה מכין את המשלוח ויוצר עמך קשר לתיאום סופי!`,
+    items: [
+      { sku: "20001", name: "בלה סומסום נקי", quantity: 3, unit: "בלה", unitPrice: 110, totalPrice: 330 },
+      { sku: "20002", name: "בלה חול מחצבה (טיט)", quantity: 1, unit: "בלה", unitPrice: 105, totalPrice: 105 },
+      { sku: "GENERIC-99", name: "מנוף לקומה 2", quantity: 1, unit: "יחידה", unitPrice: 0, totalPrice: 0 },
+    ],
+    totalPrice: 435,
+    status: "בטיפול לוגיסטי",
+    sentToWhatsapp: true,
+    createdAt: new Date().toLocaleTimeString("he-IL", { hour: "2-digit", minute: "2-digit" }),
+  },
+];
+
 // Initialize Gemini SDK if GEMINI_API_KEY is available
 function getGeminiClient() {
   const apiKey = process.env.GEMINI_API_KEY;
@@ -167,7 +210,166 @@ app.post("/api/webhook/google-script", async (req, res) => {
   }
 });
 
+// Local Server C:\ap94 Listener Webhook Event Mirroring Route
+app.post("/api/listener/event", async (req, res) => {
+  try {
+    const body = req.body || {};
+    const phone = body.phone || body.from || body.chatId || "050-0000000";
+    const senderName = body.senderName || body.contactName || body.sender || body.name || "לקוח וואטסאפ";
+    const isGroup = Boolean(body.isGroup);
+    const incomingMessage = body.incomingMessage || body.userMessage || body.message || body.prompt || body.text || "";
+    const sentToWhatsapp = body.sentToWhatsapp !== undefined ? Boolean(body.sentToWhatsapp) : true;
+    const timestamp = body.timestamp || new Date().toISOString();
+
+    let noaResponse = body.noaResponse || body.replyText || "";
+
+    // If noaResponse was not supplied by local server C:\ap94, generate response using Logistic Dictionary / AI engine
+    if (!noaResponse && incomingMessage) {
+      const orderVerification = verifyOrderLocally(incomingMessage, senderName);
+      if (orderVerification) {
+        noaResponse = orderVerification;
+      } else {
+        noaResponse = "הודעתך התקבלה והועברה לצוות";
+      }
+    }
+
+    const eventId = `evt_${Date.now()}`;
+    const newEvent = {
+      id: eventId,
+      phone,
+      senderName,
+      isGroup,
+      incomingMessage,
+      noaResponse,
+      sentToWhatsapp,
+      timestamp,
+    };
+
+    listenerEvents.push(newEvent);
+    if (listenerEvents.length > 100) listenerEvents.shift();
+
+    // Log to webhookLogs for System Logs tab
+    const logEntry = {
+      id: `wh_evt_${Date.now()}`,
+      timestamp: new Date().toLocaleTimeString("he-IL"),
+      direction: "incoming" as const,
+      url: "/api/listener/event (C:\\ap94 Listener)",
+      payload: body,
+      responseCode: 200,
+      status: "success" as const,
+      details: `Mirrored local C:\\ap94 listener event (phone: ${phone}, sentToWhatsapp: ${sentToWhatsapp})`,
+    };
+
+    webhookLogs.push(logEntry);
+    if (webhookLogs.length > 50) webhookLogs.shift();
+
+    // Parse order items into staging table (הזמנות_סידור)
+    let stagedOrderEntry: any = null;
+    const isOrderMsg = /(מלט|סומסום|חול|טיט|איטונג|בלוק|גבס|פנל|טיח|חצץ|משלוח|מנוף|שק|בלה|משטח)/i.test(incomingMessage) ||
+                       /(מלט|סומסום|חול|טיט|איטונג|בלוק|גבס|פנל|טיח|חצץ|מק"ט)/i.test(noaResponse);
+
+    if (isOrderMsg && incomingMessage) {
+      const parsedItems: any[] = [];
+      const lines = incomingMessage.split(/[\n,;+]| וגם | ועוד |\t/).map((l: string) => l.trim()).filter(Boolean);
+
+      for (const line of lines) {
+        let quantity = 1;
+        let textNoQty = line;
+        const numMatch = line.match(/(?:^|\s)(\d+)(?:\s*x|\s*שקים|\s*בלות|\s*משטחים|\s*יח|\s*יחידות|\s*מ"ר)?(?:\s+|$)/i);
+        if (numMatch) {
+          quantity = parseInt(numMatch[1], 10);
+          textNoQty = line.replace(numMatch[0], " ").trim();
+        }
+
+        let matchedSku = "GENERIC-99";
+        let matchedName = textNoQty || line;
+        let unitPrice = 0;
+        let unit = "יחידה";
+
+        const lowerLine = line.toLowerCase();
+        for (const prod of logisticDictionary) {
+          if (
+            prod.aliases.some((a) => lowerLine.includes(a.toLowerCase())) ||
+            lowerLine.includes(prod.productName.toLowerCase())
+          ) {
+            matchedSku = prod.sku;
+            matchedName = prod.productName;
+            unitPrice = prod.price || 0;
+            unit = prod.unit;
+            break;
+          }
+        }
+
+        parsedItems.push({
+          sku: matchedSku,
+          name: matchedName,
+          quantity,
+          unit,
+          unitPrice,
+          totalPrice: unitPrice * quantity,
+        });
+      }
+
+      const orderTotal = parsedItems.reduce((acc, item) => acc + item.totalPrice, 0);
+      stagedOrderEntry = {
+        id: `ord_${Date.now()}`,
+        orderNumber: `ORD-${Math.floor(10000 + Math.random() * 90000)}`,
+        customerPhone: phone,
+        customerName: senderName,
+        rawMessage: incomingMessage,
+        noaResponse,
+        items: parsedItems,
+        totalPrice: orderTotal,
+        status: "נקלט ב-SabanOS",
+        sentToWhatsapp: true,
+        createdAt: new Date().toLocaleTimeString("he-IL", { hour: "2-digit", minute: "2-digit" }),
+      };
+
+      stagedOrders.unshift(stagedOrderEntry);
+      if (stagedOrders.length > 50) stagedOrders.pop();
+    }
+
+    return res.json({
+      success: true,
+      id: eventId,
+      phone,
+      senderName,
+      isGroup,
+      incomingMessage,
+      noaResponse,
+      sentToWhatsapp: true,
+      stagedOrder: stagedOrderEntry,
+      timestamp,
+    });
+  } catch (err: any) {
+    console.error("Error in /api/listener/event:", err);
+    return res.status(200).json({
+      success: true,
+      text: "הודעתך התקבלה והועברה לצוות",
+      sentToWhatsapp: true,
+      errorDetails: err?.message || "Internal Server Error",
+    });
+  }
+});
+
+app.get("/api/listener/events", (req, res) => {
+  res.json({
+    success: true,
+    events: listenerEvents.slice(-50),
+    stagedOrders,
+  });
+});
+
+app.get("/api/orders/staged", (req, res) => {
+  res.json({
+    success: true,
+    tab: "הזמנות_סידור",
+    orders: stagedOrders,
+  });
+});
+
 // Local Server WhatsApp Webhook Listener (GET & POST)
+
 app.get("/api/webhook/whatsapp", (req, res) => {
   const mode = req.query["hub.mode"];
   const challenge = req.query["hub.challenge"];

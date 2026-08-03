@@ -135,3 +135,29 @@ export interface NormalizedOrderItem {
   unitPrice?: number;
   totalPrice?: number;
 }
+
+export interface StagedOrder {
+  id: string;
+  orderNumber: string;
+  customerPhone: string;
+  customerName: string;
+  rawMessage: string;
+  noaResponse: string;
+  items: NormalizedOrderItem[];
+  totalPrice: number;
+  status: 'נקלט ב-SabanOS' | 'בטיפול לוגיסטי' | 'יצא לדרך' | 'הושלם';
+  sentToWhatsapp: boolean;
+  createdAt: string;
+}
+
+export interface ListenerEventPayload {
+  id?: string;
+  phone: string;
+  senderName: string;
+  isGroup?: boolean;
+  incomingMessage: string;
+  noaResponse?: string;
+  sentToWhatsapp?: boolean;
+  timestamp?: string;
+  stagedOrder?: StagedOrder;
+}
