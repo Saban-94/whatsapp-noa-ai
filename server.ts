@@ -752,9 +752,12 @@ app.post("/api/chat/respond", async (req, res) => {
   try {
     const body = req.body || {};
 
-    const chatId = body.chatId || body.id || "default";
+    const phone = body.phone || body.from || body.chatId || "050-0000000";
+    const userMessage = body.message || body.userMessage || body.prompt || body.text || "";
+    const timestamp = body.timestamp || new Date().toISOString();
+
+    const chatId = body.chatId || body.id || phone || "default";
     const contactName = body.contactName || body.sender || body.name || "לקוח";
-    const userMessage = body.userMessage || body.message || body.prompt || body.text || "";
     const conversationHistory = Array.isArray(body.conversationHistory)
       ? body.conversationHistory
       : Array.isArray(body.history)
@@ -783,9 +786,10 @@ app.post("/api/chat/respond", async (req, res) => {
         body: JSON.stringify({
           action: "incoming_message",
           chatId,
+          phone,
           sender: contactName,
           message: userMessage,
-          timestamp: new Date().toISOString(),
+          timestamp,
         }),
       }).catch((err) => console.log("Google Apps Script sync background warning:", err?.message));
     }
@@ -812,7 +816,7 @@ app.post("/api/chat/respond", async (req, res) => {
     // Format Customer CRM profile & Order History context
     const crmContext = customerProfile
       ? `\n\nתיק לקוח CRM מיועד (${contactName}):\n` +
-        `- טלפון: ${customerProfile.phone || "לא צוין"}\n` +
+        `- טלפון: ${customerProfile.phone || phone || "לא צוין"}\n` +
         `- חברה/עסק: ${customerProfile.company || "פרטי"}\n` +
         `- כתובת/אתר: ${customerProfile.address || "לא צוינה"}\n` +
         `- מסגרת אשראי/חוב: ${customerProfile.creditLimit ? `₪${customerProfile.creditLimit}` : "תקין"}\n` +
@@ -837,7 +841,7 @@ ${dictionaryContext}
 
 ${kbContext}
 
-אתה משיב כעת בצ'אט וואטסאפ ללקוח בשם: "${contactName}".
+אתה משיב כעת בצ'אט וואטסאפ ללקוח בשם: "${contactName}" (טלפון: ${phone}).
 הוראות חובה לשירות נועה AI:
 1. השתמש בהיסטוריית השיחה וההזמנות הקודמות של הלקוח כדי לספק מענה מדויק ואישי!
 2. בכל הודעת אישור או קליטת הזמנה מול לקוח, חובה לבצע אימות מלא מול טאב "מילון_לוגיסטי"!
@@ -890,7 +894,7 @@ ${kbContext}
             },
           });
 
-          let replyText = response.text || "קיבלתי את הודעתך, אשמח לעזור!";
+          let replyText = response.text || "הודעתך התקבלה והועברה לצוות";
 
           // If this is an order message and Gemini didn't include SKUs [מק"ט], enforce local verification summary
           if (orderVerificationText && (!replyText.includes("מק\"ט") && !replyText.includes("מילון"))) {
@@ -900,6 +904,8 @@ ${kbContext}
           return res.json({
             success: true,
             text: replyText,
+            phone,
+            message: userMessage,
             source: "gemini",
             modelUsed: modelName,
             timestamp: new Date().toISOString(),
@@ -925,6 +931,8 @@ ${kbContext}
       return res.json({
         success: true,
         text: orderVerificationText,
+        phone,
+        message: userMessage,
         source: "logistic_dictionary_verifier",
         timestamp: new Date().toISOString(),
       });
@@ -960,13 +968,15 @@ ${kbContext}
       } else if (lowerMsg.includes("מחיר") || lowerMsg.includes("עלות") || lowerMsg.includes("כמה עולה")) {
         replyText = "המחירון המלא מעודכן במערכת SabanOS. תרצה לקבל פירוט והצעת מחיר מותאמת אישית?";
       } else {
-        replyText = "שלום! הודעתך נקלטה במערכת SabanOS. נשמח לסייע לך בכל שאלה לגבי משלוחים, הזמנות ומידע נוסף! 😊";
+        replyText = "הודעתך התקבלה והועברה לצוות";
       }
     }
 
     return res.json({
       success: true,
       text: replyText,
+      phone,
+      message: userMessage,
       source: "smart_fallback",
       timestamp: new Date().toISOString(),
     });
@@ -974,7 +984,7 @@ ${kbContext}
     console.error("Unhandled exception in /api/chat/respond:", error?.stack || error?.message || error);
     return res.status(200).json({
       success: true,
-      text: "שלום! הודעתך נקלטה במערכת SabanOS. צוות השירות יחזור אליך בהקדם. 😊",
+      text: "הודעתך התקבלה והועברה לצוות",
       source: "error_fallback",
       errorDetails: error?.message || "Internal Server Error",
       timestamp: new Date().toISOString(),

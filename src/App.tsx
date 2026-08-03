@@ -21,7 +21,10 @@ import { MessageInput } from './components/Chat/MessageInput';
 import { ContactInfoModal } from './components/Chat/ContactInfoModal';
 import { AdminModal } from './components/Admin/AdminModal';
 import { SplashGateway } from './components/SplashGateway';
+import { PWAInstallPrompt } from './components/PWAInstallPrompt';
+import { MobileBottomNav } from './components/MobileBottomNav';
 import { playWhatsAppIncomingSound, playWhatsAppOutgoingSound } from './utils/audio';
+import { sendNotification, playNotificationSound } from './utils/notificationService';
 
 export default function App() {
   const [chats, setChats] = useState<Chat[]>(loadStoredChats);
@@ -32,6 +35,7 @@ export default function App() {
   const [activeChatId, setActiveChatId] = useState<string>(chats[0]?.id || 'chat_noa_ai');
   const [searchQuery, setSearchQuery] = useState('');
   const [activeFilter, setActiveFilter] = useState<ChatFilter>('all');
+  const [mobileTab, setMobileTab] = useState<'chats' | 'orders' | 'logistics' | 'admin'>('chats');
   
   const [isAdminOpen, setIsAdminOpen] = useState(false);
   const [isNewChatOpen, setIsNewChatOpen] = useState(false);
@@ -710,11 +714,34 @@ export default function App() {
     }
   };
 
+  const totalUnreadCount = chats.reduce((acc, c) => acc + (c.contact.unreadCount || 0), 0);
+
+  const handleMobileTabChange = (tab: 'chats' | 'orders' | 'logistics' | 'admin') => {
+    setMobileTab(tab);
+    if (tab === 'chats') {
+      setActiveFilter('all');
+      setMobileShowChat(false);
+    } else if (tab === 'orders') {
+      setActiveFilter('unread');
+      setMobileShowChat(false);
+    } else if (tab === 'logistics') {
+      setActiveFilter('groups');
+      setMobileShowChat(false);
+    } else if (tab === 'admin') {
+      setIsAdminOpen(true);
+    }
+  };
+
   return (
-    <div className="h-screen w-screen flex items-center justify-center bg-[#090e11] font-['Heebo','Rubik',sans-serif] text-[#e9edef] overflow-hidden select-none">
+    <div className="h-screen w-screen flex flex-col items-center justify-center bg-[#090e11] font-['Heebo','Rubik',sans-serif] text-[#e9edef] overflow-hidden select-none relative">
       
+      {/* PWA Install Banner & Web Notification Toast */}
+      <div className="w-full shrink-0">
+        <PWAInstallPrompt darkTheme={settings.darkTheme} />
+      </div>
+
       {/* Outer App Frame Container (Simulates WhatsApp Web Green Header Stripe on Big Screens) */}
-      <div className="w-full h-full lg:p-4 max-w-[1600px] flex">
+      <div className="w-full flex-1 lg:p-4 max-w-[1600px] flex overflow-hidden min-h-0 pb-14 md:pb-0">
         <div className="w-full h-full bg-[#111b21] rounded-none lg:rounded-xl shadow-2xl border border-[#222d34] flex overflow-hidden relative">
 
           {/* SIDEBAR (Contacts & Chats) */}
@@ -839,6 +866,16 @@ export default function App() {
       <SplashGateway
         isOpen={isGatewayOpen}
         onClose={() => setIsGatewayOpen(false)}
+        darkTheme={settings.darkTheme}
+      />
+
+      {/* MOBILE BOTTOM NAVIGATION BAR */}
+      <MobileBottomNav
+        activeTab={mobileTab}
+        onTabChange={handleMobileTabChange}
+        onOpenNewChat={() => setIsNewChatOpen(true)}
+        onOpenAdmin={() => setIsAdminOpen(true)}
+        unreadCountTotal={totalUnreadCount}
         darkTheme={settings.darkTheme}
       />
 
