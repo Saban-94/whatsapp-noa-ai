@@ -39,14 +39,38 @@ interface WhatsAppMirrorProps {
 }
 
 export const WhatsAppMirror: React.FC<WhatsAppMirrorProps> = ({ darkTheme = true }) => {
-  // Live listener events & sync state
-  const [events, setEvents] = useState<ListenerEventPayload[]>([]);
+  // Live listener events & sync state with localStorage persistence
+  const [events, setEvents] = useState<ListenerEventPayload[]>(() => {
+    try {
+      const saved = localStorage.getItem('saban_whatsapp_events');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          return parsed;
+        }
+      }
+    } catch (e) {
+      console.warn('Failed to parse cached WhatsApp events:', e);
+    }
+    return [];
+  });
   const [profiles, setProfiles] = useState<Record<string, CustomerProfile>>({});
   const [chatModes, setChatModes] = useState<Record<string, 'auto' | 'manual'>>({});
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [autoRefresh, setAutoRefresh] = useState<boolean>(true);
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [activeFilter, setActiveFilter] = useState<'all' | 'direct' | 'groups' | 'manual'>('all');
+
+  // Save incoming & sent events to localStorage layer for offline/refresh resilience
+  useEffect(() => {
+    if (events.length > 0) {
+      try {
+        localStorage.setItem('saban_whatsapp_events', JSON.stringify(events.slice(-300)));
+      } catch (e) {
+        console.warn('Failed to persist events to localStorage:', e);
+      }
+    }
+  }, [events]);
 
   // Toast Notification state
   const [toastNotification, setToastNotification] = useState<{
@@ -83,16 +107,31 @@ export const WhatsAppMirror: React.FC<WhatsAppMirrorProps> = ({ darkTheme = true
 
       if (eventsRes.ok) {
         const evtData = await eventsRes.json();
-        if (evtData.events && Array.isArray(evtData.events)) {
+        if (evtData.events && Array.isArray(evtData.events) && evtData.events.length > 0) {
           const newEventsList: ListenerEventPayload[] = evtData.events;
           
-          // Preserve local optimistic messages so they don't blink or vanish
+          // Merge incoming server events with existing events map (never wipe local state)
           setEvents((prev) => {
-            const serverIds = new Set(newEventsList.map((e) => e.id));
-            const pendingOptimistic = prev.filter(
-              (pe) => pe.id && pe.id.startsWith('evt_opt_') && !serverIds.has(pe.id)
-            );
-            return [...newEventsList, ...pendingOptimistic];
+            const eventMap = new Map<string, ListenerEventPayload>();
+
+            // 1. Keep all existing local/cached/optimistic messages
+            prev.forEach((e) => {
+              const key = e.id || `${e.phone}_${e.timestamp}_${(e.incomingMessage || '').substring(0, 15)}`;
+              eventMap.set(key, e);
+            });
+
+            // 2. Append/update with server events
+            newEventsList.forEach((e) => {
+              const key = e.id || `${e.phone}_${e.timestamp}_${(e.incomingMessage || '').substring(0, 15)}`;
+              const existing = eventMap.get(key);
+              if (existing && existing.status === 'sending') {
+                eventMap.set(key, { ...existing, ...e, status: 'sent' });
+              } else {
+                eventMap.set(key, e);
+              }
+            });
+
+            return Array.from(eventMap.values());
           });
 
           // Check for new incoming events that weren't seen before

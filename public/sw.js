@@ -1,25 +1,25 @@
-const CACHE_NAME = 'noa-ai-pwa-v1';
+const CACHE_NAME = 'noa-ai-pwa-v3';
 const STATIC_ASSETS = [
   '/',
   '/index.html',
   '/manifest.json',
-  '/icon.svg',
-  '/src/main.tsx'
+  '/icon.svg'
 ];
 
-// Install Event - Pre-cache essential static assets
+// Install Event - Pre-cache essential static assets & skip waiting immediately
 self.addEventListener('install', (event) => {
+  self.skipWaiting();
   event.waitUntil(
     caches.open(CACHE_NAME).then((cache) => {
       console.log('[ServiceWorker] Pre-caching static assets');
       return cache.addAll(STATIC_ASSETS).catch((err) => {
         console.warn('[ServiceWorker] Pre-cache warning:', err);
       });
-    }).then(() => self.skipWaiting())
+    })
   );
 });
 
-// Activate Event - Clean up old caches
+// Activate Event - Clean up old caches & claim clients immediately
 self.addEventListener('activate', (event) => {
   event.waitUntil(
     caches.keys().then((cacheNames) => {
@@ -35,7 +35,7 @@ self.addEventListener('activate', (event) => {
   );
 });
 
-// Fetch Event - Dynamic Network-First for /api/ and Cache-First for static assets
+// Fetch Event - Universal Network-First Strategy for ALL API calls & dynamic assets
 self.addEventListener('fetch', (event) => {
   const request = event.request;
   const url = new URL(request.url);
@@ -45,22 +45,28 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // Network-First strategy for API endpoints
-  if (url.pathname.startsWith('/api/')) {
-    event.respondWith(
-      fetch(request)
-        .then((networkResponse) => {
-          if (networkResponse && networkResponse.status === 200) {
-            const responseClone = networkResponse.clone();
-            caches.open(CACHE_NAME).then((cache) => {
-              cache.put(request, responseClone);
-            });
+  // Network-First Strategy for ALL GET requests (API, JS, CSS, HTML, images)
+  event.respondWith(
+    fetch(request)
+      .then((networkResponse) => {
+        // Cache valid HTTP 200 responses for offline fallback
+        if (networkResponse && networkResponse.status === 200) {
+          const responseClone = networkResponse.clone();
+          caches.open(CACHE_NAME).then((cache) => {
+            cache.put(request, responseClone);
+          });
+        }
+        return networkResponse;
+      })
+      .catch((error) => {
+        console.warn('[ServiceWorker] Network request failed, serving from cache:', url.pathname, error);
+        return caches.match(request).then((cachedResponse) => {
+          if (cachedResponse) {
+            return cachedResponse;
           }
-          return networkResponse;
-        })
-        .catch(() => {
-          return caches.match(request).then((cachedResponse) => {
-            if (cachedResponse) return cachedResponse;
+
+          // If JSON API request failed offline
+          if (url.pathname.startsWith('/api/')) {
             return new Response(
               JSON.stringify({
                 success: false,
@@ -69,45 +75,16 @@ self.addEventListener('fetch', (event) => {
               }),
               { headers: { 'Content-Type': 'application/json' } }
             );
-          });
-        })
-    );
-    return;
-  }
-
-  // Cache-First strategy for static assets, scripts, stylesheets, and HTML documents
-  event.respondWith(
-    caches.match(request).then((cachedResponse) => {
-      if (cachedResponse) {
-        // Fetch background update for cache freshness
-        fetch(request)
-          .then((networkResponse) => {
-            if (networkResponse && networkResponse.status === 200) {
-              caches.open(CACHE_NAME).then((cache) => cache.put(request, networkResponse));
-            }
-          })
-          .catch(() => {});
-        return cachedResponse;
-      }
-
-      return fetch(request)
-        .then((networkResponse) => {
-          if (!networkResponse || networkResponse.status !== 200 || networkResponse.type !== 'basic') {
-            return networkResponse;
           }
-          const responseClone = networkResponse.clone();
-          caches.open(CACHE_NAME).then((cache) => {
-            cache.put(request, responseClone);
-          });
-          return networkResponse;
-        })
-        .catch(() => {
-          // If HTML navigation fails, return cached index.html
+
+          // If navigation mode failed offline, serve index.html from cache
           if (request.mode === 'navigate') {
             return caches.match('/index.html') || caches.match('/');
           }
+
+          return new Response('Offline', { status: 503, statusText: 'Service Unavailable' });
         });
-    })
+      })
   );
 });
 

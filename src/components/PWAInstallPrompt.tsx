@@ -32,6 +32,9 @@ export const PWAInstallPrompt: React.FC<PWAInstallPromptProps> = ({ darkTheme = 
           .register('/sw.js')
           .then((registration) => {
             console.log('[ServiceWorker] Successfully registered with scope:', registration.scope);
+            registration.update().catch((err) => {
+              console.warn('[ServiceWorker] Update check failed:', err);
+            });
           })
           .catch((error) => {
             console.warn('[ServiceWorker] Registration failed:', error);
