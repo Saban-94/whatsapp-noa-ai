@@ -566,6 +566,116 @@ app.get("/api/listener/events", (req, res) => {
   });
 });
 
+// Primary Local Listener & Vercel Sync Route (/api/chat/respond)
+app.get("/api/chat/respond", (req, res) => {
+  res.json({
+    status: "online",
+    endpoint: "/api/chat/respond",
+    activeSince: new Date().toISOString(),
+    supportedMethods: ["GET", "POST"],
+    info: "Noa AI / SabanOS Local WhatsApp Listener Sync API",
+  });
+});
+
+app.post("/api/chat/respond", async (req, res) => {
+  try {
+    const body = req.body || {};
+    const rawPhone = body.phone || body.customerPhone || "0500000000";
+    const phone = rawPhone.replace(/\D/g, "") || rawPhone;
+    const senderName = body.senderName || body.contactName || body.parsedClientName || "לקוח";
+    const incomingMessage = (body.incomingMessage || body.userMessage || body.message || "").trim();
+    const isGroup = Boolean(body.isGroup);
+    const groupId = body.groupId || null;
+    const timestamp = body.timestamp || new Date().toISOString();
+    const source = body.source || "local_whatsapp_listener";
+    const msgId = body.id || `evt_res_${Date.now()}`;
+
+    if (!incomingMessage) {
+      return res.json({
+        success: true,
+        response: null,
+        info: "התקבלה הודעה ריקה, לא נוצר מענה",
+      });
+    }
+
+    // Check mode toggle (auto vs manual)
+    const currentMode: "auto" | "manual" = chatModes[phone] || chatModes[rawPhone] || "auto";
+
+    let aiResponseText = "";
+
+    if (currentMode === "manual") {
+      aiResponseText = "[מצב מעקף מנהל ידני פעיל - מענה אוטומטי הושעה. המנהל יענה ישירות בצ'אט]";
+    } else {
+      // Auto Mode: Generate intelligent SabanOS response
+      // Check customer profile and sheet context
+      const profile = customerProfiles[phone] || customerProfiles[rawPhone];
+      const matchedOrders = stagedOrders.filter((o) => o.customerPhone.includes(phone) || phone.includes(o.customerPhone.replace(/\D/g, "")));
+
+      if (/הזמנה|חומרי בניין|צמנט|סומסום|חול|טיט|מנוף|משאית|אספקה/i.test(incomingMessage)) {
+        if (matchedOrders.length > 0) {
+          const lastOrd = matchedOrders[matchedOrders.length - 1];
+          aiResponseText = `שלום ${senderName}! 👋 ראיתי את פנייתך. מצאתי במערכת הזמנה פעילה (${lastOrd.id}) עבור ${lastOrd.address || 'האתר שלך'}. הסטטוס כרגע: ${lastOrd.status || 'בטיפול'}. 🚛`;
+        } else {
+          aiResponseText = `שלום ${senderName}! 👋 קיבלנו את בקשתך לחומרי בניין בח. סבן. הודעתך נקלטה במערכת הסידור הלוגיסטי.`;
+        }
+      } else if (/^(היי|שלום|אהלן|בוקר טוב|ערב טוב|מה נשמע)/i.test(incomingMessage)) {
+        aiResponseText = `היי ${senderName}! 👋 במה נועה AI וצוות ח. סבן יכולים לעזור לך היום?`;
+      } else {
+        aiResponseText = `שלום ${senderName}, קיבלנו את הודעתך והיא בטיפול צוות ח. סבן! 🚚`;
+      }
+    }
+
+    // Store in listenerEvents list for live UI mirror
+    const eventEntry = {
+      id: msgId,
+      phone,
+      senderName,
+      isGroup,
+      groupId,
+      parsedClientName: senderName,
+      incomingMessage,
+      noaResponse: aiResponseText,
+      sentToWhatsapp: true,
+      timestamp,
+      source,
+    };
+
+    listenerEvents.push(eventEntry);
+    if (listenerEvents.length > 50) listenerEvents.shift();
+
+    // Log to webhookLogs
+    webhookLogs.push({
+      id: `webhook_${Date.now()}`,
+      timestamp: new Date().toLocaleTimeString("he-IL"),
+      direction: "incoming",
+      url: "/api/chat/respond",
+      payload: { phone, senderName, incomingMessage, isGroup, mode: currentMode },
+      responseCode: 200,
+      status: "success",
+      details: `Incoming WhatsApp payload from ${senderName} (${phone}) [Mode: ${currentMode}]`,
+    });
+    if (webhookLogs.length > 50) webhookLogs.shift();
+
+    return res.json({
+      success: true,
+      id: msgId,
+      phone,
+      senderName,
+      mode: currentMode,
+      response: aiResponseText,
+      timestamp,
+      info: "Payload captured and processed successfully by /api/chat/respond",
+    });
+  } catch (err: any) {
+    console.error("Error in /api/chat/respond:", err);
+    return res.status(500).json({
+      success: false,
+      error: err?.message || "Internal server error in respond sync route",
+    });
+  }
+});
+
+
 // In-Memory Customer Profiles & Mode Toggles
 let chatModes: Record<string, "auto" | "manual"> = {
   "0508861080": "auto",

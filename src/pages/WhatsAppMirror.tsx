@@ -26,10 +26,13 @@ import {
   MapPin,
   Tag,
   Info,
+  X,
+  Bell,
 } from 'lucide-react';
 import { ListenerEventPayload, CustomerProfile } from '../types';
 import { CustomerProfileDrawer } from '../components/Chat/CustomerProfileDrawer';
 import { NoaCommandCenter } from '../components/Admin/NoaCommandCenter';
+import { playWhatsAppIncomingSound, playWhatsAppOutgoingSound } from '../utils/audio';
 
 interface WhatsAppMirrorProps {
   darkTheme?: boolean;
@@ -44,6 +47,15 @@ export const WhatsAppMirror: React.FC<WhatsAppMirrorProps> = ({ darkTheme = true
   const [autoRefresh, setAutoRefresh] = useState<boolean>(true);
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [activeFilter, setActiveFilter] = useState<'all' | 'direct' | 'groups' | 'manual'>('all');
+
+  // Toast Notification state
+  const [toastNotification, setToastNotification] = useState<{
+    senderName: string;
+    message: string;
+  } | null>(null);
+
+  // Track event IDs to trigger audio and toasts on new items
+  const prevEventIdsRef = useRef<Set<string>>(new Set());
 
   // Selected Active Chat ID in Mirror ('noa_command' or phone number)
   const [activeChatPhone, setActiveChatPhone] = useState<string>('noa_command');
@@ -71,7 +83,38 @@ export const WhatsAppMirror: React.FC<WhatsAppMirrorProps> = ({ darkTheme = true
       if (eventsRes.ok) {
         const evtData = await eventsRes.json();
         if (evtData.events && Array.isArray(evtData.events)) {
-          setEvents(evtData.events);
+          const newEventsList: ListenerEventPayload[] = evtData.events;
+          setEvents(newEventsList);
+
+          // Check for new incoming events that weren't seen before
+          let newlyArrived: ListenerEventPayload | null = null;
+          newEventsList.forEach((e) => {
+            if (e.id && !prevEventIdsRef.current.has(e.id)) {
+              if (!prevEventIdsRef.current.has('initial_seed')) {
+                // Initial load, don't play sound for all old messages
+              } else {
+                newlyArrived = e;
+              }
+              prevEventIdsRef.current.add(e.id);
+            }
+          });
+
+          if (!prevEventIdsRef.current.has('initial_seed')) {
+            prevEventIdsRef.current.add('initial_seed');
+          } else if (newlyArrived) {
+            // Trigger audio chime and toast!
+            playWhatsAppIncomingSound();
+            const sender = (newlyArrived as any).senderName || (newlyArrived as any).parsedClientName || 'לקוח';
+            const msgText = (newlyArrived as any).incomingMessage || 'הודעה חדשה מתקבלת בוואטסאפ';
+            setToastNotification({
+              senderName: sender,
+              message: msgText,
+            });
+
+            setTimeout(() => {
+              setToastNotification(null);
+            }, 5000);
+          }
         }
       }
 
@@ -636,6 +679,31 @@ export const WhatsAppMirror: React.FC<WhatsAppMirrorProps> = ({ darkTheme = true
             handleToggleModeForPhone(activeChatPhone, newMode);
           }}
         />
+      )}
+
+      {/* REAL-TIME INCOMING MESSAGE TOAST NOTIFICATION */}
+      {toastNotification && (
+        <div className="fixed top-5 left-5 z-50 max-w-sm bg-[#202c33] border-2 border-[#00a884] rounded-2xl p-4 shadow-2xl text-[#e9edef] animate-bounce-short flex items-start gap-3">
+          <div className="p-2 bg-[#00a884]/20 text-[#00a884] rounded-full shrink-0">
+            <Bell className="w-5 h-5 animate-pulse" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center justify-between gap-2 mb-1">
+              <span className="font-bold text-xs text-[#00a884] truncate">
+                📩 הודעה חדשה מ-{toastNotification.senderName}
+              </span>
+              <button
+                onClick={() => setToastNotification(null)}
+                className="text-[#8696a0] hover:text-[#e9edef] p-0.5 rounded cursor-pointer"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </div>
+            <p className="text-xs text-[#e9edef]/90 line-clamp-2 leading-relaxed dir-rtl">
+              "{toastNotification.message}"
+            </p>
+          </div>
+        </div>
       )}
 
     </div>
