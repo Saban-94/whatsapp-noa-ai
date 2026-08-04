@@ -206,3 +206,17 @@ export interface ListenerEventPayload {
   stagedOrder?: StagedOrder;
   status?: 'sending' | 'sent' | 'failed';
 }
+
+export interface InboundInquiry {
+  id: string;
+  customerName: string;
+  customerPhone: string;
+  incomingMessage: string;
+  status: 'חדש' | 'טופל';
+  timestamp: string;
+  groupId?: string;
+  source?: string;
+  lastNudgeAt?: string;
+  nudgeCount?: number;
+}
+

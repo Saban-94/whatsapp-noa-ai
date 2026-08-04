@@ -87,6 +87,19 @@ let stagedOrders: Array<{
   },
 ];
 
+let inboundInquiries: Array<{
+  id: string;
+  customerName: string;
+  customerPhone: string;
+  incomingMessage: string;
+  status: "חדש" | "טופל";
+  timestamp: string;
+  groupId?: string;
+  source?: string;
+  lastNudgeAt?: string;
+  nudgeCount?: number;
+}> = [];
+
 // Initialize Gemini SDK if GEMINI_API_KEY is available
 function getGeminiClient() {
   const apiKey = process.env.GEMINI_API_KEY;
@@ -556,6 +569,72 @@ app.post("/api/chat/send-manual", async (req, res) => {
       error: err?.message || "Failed to send manual message",
     });
   }
+});
+
+// ==============================================================================
+// Inbound Inquiries & Nudge Engine Management API Routes
+// ==============================================================================
+app.get("/api/inquiries", (req, res) => {
+  res.json({
+    success: true,
+    inquiries: inboundInquiries,
+    pendingCount: inboundInquiries.filter((i) => i.status === "חדש").length,
+    handledCount: inboundInquiries.filter((i) => i.status === "טופל").length,
+  });
+});
+
+app.post("/api/inquiries", (req, res) => {
+  const body = req.body || {};
+  if (!body.customerName && !body.incomingMessage) {
+    return res.status(400).json({ success: false, error: "Missing inquiry details" });
+  }
+
+  const existingIndex = inboundInquiries.findIndex((i) => i.id === body.id);
+  if (existingIndex >= 0) {
+    inboundInquiries[existingIndex] = { ...inboundInquiries[existingIndex], ...body };
+  } else {
+    const newInq = {
+      id: body.id || `inq_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+      customerName: body.customerName || "לקוח",
+      customerPhone: body.customerPhone || "0500000000",
+      incomingMessage: body.incomingMessage || "",
+      status: (body.status as "חדש" | "טופל") || "חדש",
+      timestamp: body.timestamp || new Date().toISOString(),
+      groupId: body.groupId || null,
+      source: body.source || "manual_api",
+      nudgeCount: body.nudgeCount || 0,
+      lastNudgeAt: body.lastNudgeAt || null,
+    };
+    inboundInquiries.unshift(newInq);
+  }
+
+  res.json({
+    success: true,
+    inquiries: inboundInquiries,
+    pendingCount: inboundInquiries.filter((i) => i.status === "חדש").length,
+  });
+});
+
+app.post(["/api/inquiries/status", "/api/inquiries/:id/status"], (req, res) => {
+  const id = req.params.id || req.body?.id;
+  const status = req.body?.status;
+
+  if (!id || !status) {
+    return res.status(400).json({ success: false, error: "Missing id or status" });
+  }
+
+  const inquiry = inboundInquiries.find((i) => i.id === id);
+  if (!inquiry) {
+    return res.status(404).json({ success: false, error: "Inquiry not found" });
+  }
+
+  inquiry.status = status;
+  res.json({
+    success: true,
+    id: inquiry.id,
+    newStatus: inquiry.status,
+    message: `סטטוס הפנייה עודכן ל-${status}. הנודניק הופסק!`,
+  });
 });
 
 app.get("/api/listener/events", (req, res) => {

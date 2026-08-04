@@ -25,6 +25,7 @@ import { SplashGateway } from './components/SplashGateway';
 import { PWAInstallPrompt } from './components/PWAInstallPrompt';
 import { MobileBottomNav } from './components/MobileBottomNav';
 import { WhatsAppMirror } from './pages/WhatsAppMirror';
+import { InboundOrdersDashboard } from './components/Admin/InboundOrdersDashboard';
 import { playWhatsAppIncomingSound, playWhatsAppOutgoingSound } from './utils/audio';
 import { sendNotification, playNotificationSound } from './utils/notificationService';
 
@@ -38,8 +39,9 @@ export default function App() {
   const [activeChatId, setActiveChatId] = useState<string>(chats[0]?.id || 'chat_noa_ai');
   const [searchQuery, setSearchQuery] = useState('');
   const [activeFilter, setActiveFilter] = useState<ChatFilter>('all');
-  const [activeMainTab, setActiveMainTab] = useState<'chat' | 'whatsapp-mirror'>('chat');
+  const [activeMainTab, setActiveMainTab] = useState<'chat' | 'whatsapp-mirror' | 'inbound-dashboard'>('chat');
   const [mobileTab, setMobileTab] = useState<'chats' | 'orders' | 'logistics' | 'admin'>('chats');
+  const [pendingInquiriesCount, setPendingInquiriesCount] = useState<number>(0);
   
   const [isAdminOpen, setIsAdminOpen] = useState(false);
   const [isNewChatOpen, setIsNewChatOpen] = useState(false);
@@ -62,6 +64,13 @@ export default function App() {
               combined.forEach((item) => uniqueMap.set(item.id, item));
               return Array.from(uniqueMap.values());
             });
+          }
+        }
+        const inqRes = await fetch('/api/inquiries');
+        if (inqRes.ok) {
+          const inqData = await inqRes.json();
+          if (inqData.pendingCount !== undefined) {
+            setPendingInquiriesCount(inqData.pendingCount);
           }
         }
         const settingsRes = await fetch('/api/admin/settings');
@@ -893,7 +902,7 @@ export default function App() {
 
           {/* SIDEBAR (Contacts & Chats) */}
           <div className={`w-full md:w-[380px] lg:w-[420px] flex flex-col border-l border-[#222d34] bg-[#111b21] shrink-0 ${
-            mobileShowChat || activeMainTab === 'whatsapp-mirror' ? 'hidden md:flex' : 'flex'
+            mobileShowChat || activeMainTab !== 'chat' ? 'hidden md:flex' : 'flex'
           }`}>
             <SidebarHeader
               onOpenAdmin={() => setIsAdminOpen(true)}
@@ -901,6 +910,9 @@ export default function App() {
               onOpenGateway={() => setIsGatewayOpen(true)}
               onOpenWhatsAppMirror={() => setActiveMainTab((prev) => (prev === 'whatsapp-mirror' ? 'chat' : 'whatsapp-mirror'))}
               isMirrorActive={activeMainTab === 'whatsapp-mirror'}
+              onOpenInboundDashboard={() => setActiveMainTab((prev) => (prev === 'inbound-dashboard' ? 'chat' : 'inbound-dashboard'))}
+              isInboundDashboardActive={activeMainTab === 'inbound-dashboard'}
+              pendingInquiriesCount={pendingInquiriesCount}
               darkTheme={settings.darkTheme}
             />
             <SearchBar
@@ -923,10 +935,14 @@ export default function App() {
             />
           </div>
 
-          {/* MAIN VIEW AREA: WHATSAPP MIRROR OR STANDARD CHAT */}
+          {/* MAIN VIEW AREA: WHATSAPP MIRROR, INBOUND DASHBOARD, OR STANDARD CHAT */}
           {activeMainTab === 'whatsapp-mirror' ? (
             <div className="flex-1 flex flex-col min-w-0 bg-[#0b141a] relative h-full">
               <WhatsAppMirror darkTheme={settings.darkTheme} />
+            </div>
+          ) : activeMainTab === 'inbound-dashboard' ? (
+            <div className="flex-1 flex flex-col min-w-0 bg-[#0f172a] relative h-full overflow-y-auto">
+              <InboundOrdersDashboard darkTheme={settings.darkTheme} />
             </div>
           ) : activeChat ? (
             <div className={`flex-1 flex flex-col min-w-0 bg-[#0b141a] relative ${

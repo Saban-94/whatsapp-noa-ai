@@ -7,6 +7,9 @@ interface SidebarHeaderProps {
   onOpenGateway?: () => void;
   onOpenWhatsAppMirror?: () => void;
   isMirrorActive?: boolean;
+  onOpenInboundDashboard?: () => void;
+  isInboundDashboardActive?: boolean;
+  pendingInquiriesCount?: number;
   darkTheme: boolean;
 }
 
@@ -16,6 +19,9 @@ export const SidebarHeader: React.FC<SidebarHeaderProps> = ({
   onOpenGateway,
   onOpenWhatsAppMirror,
   isMirrorActive = false,
+  onOpenInboundDashboard,
+  isInboundDashboardActive = false,
+  pendingInquiriesCount = 0,
   darkTheme,
 }) => {
   const [showMenu, setShowMenu] = useState(false);
@@ -37,7 +43,7 @@ export const SidebarHeader: React.FC<SidebarHeaderProps> = ({
       darkTheme ? 'bg-[#202c33] border-b border-[#222d34]' : 'bg-[#f0f2f5] border-b border-[#e9edef]'
     }`}>
       {/* Right Side in RTL: User Avatar & SabanOS Badge */}
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-1.5">
         <div 
           onClick={handleAvatarClick}
           className="relative cursor-pointer group shrink-0"
@@ -53,11 +59,32 @@ export const SidebarHeader: React.FC<SidebarHeaderProps> = ({
           </div>
         </div>
 
+        {/* Inbound Inquiries & Nudge Dashboard Tab Button */}
+        {onOpenInboundDashboard && (
+          <button
+            onClick={onOpenInboundDashboard}
+            className={`px-2 py-1 rounded-lg text-xs font-bold transition-all flex items-center gap-1 cursor-pointer border ${
+              isInboundDashboardActive
+                ? 'bg-rose-500/25 text-rose-400 border-rose-500 shadow-sm'
+                : 'bg-[#111b21]/80 hover:bg-[#182229] text-[#e9edef] border-[#2a3942]'
+            }`}
+            title="לוח פניות נכנסות ומערכת נודניק"
+          >
+            <span className="text-rose-400 font-bold">🚨</span>
+            <span className="hidden xl:inline">פניות ונודניקים</span>
+            {pendingInquiriesCount > 0 && (
+              <span className="bg-rose-500 text-white text-[9px] font-black px-1.5 py-0.2 rounded-full animate-pulse">
+                {pendingInquiriesCount}
+              </span>
+            )}
+          </button>
+        )}
+
         {/* WhatsApp Mirror Main Tab Button */}
         {onOpenWhatsAppMirror && (
           <button
             onClick={onOpenWhatsAppMirror}
-            className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer border ${
+            className={`px-2 py-1 rounded-lg text-xs font-bold transition-all flex items-center gap-1 cursor-pointer border ${
               isMirrorActive
                 ? 'bg-[#00a884]/25 text-[#00a884] border-[#00a884] shadow-sm'
                 : 'bg-[#111b21]/80 hover:bg-[#182229] text-[#e9edef] border-[#2a3942]'
@@ -65,9 +92,9 @@ export const SidebarHeader: React.FC<SidebarHeaderProps> = ({
             title="פתיחת לשונית שיקוף וואטסאפ נועה בזמן אמת"
           >
             <Radio className="w-3.5 h-3.5 text-[#00a884] animate-pulse" />
-            <span className="hidden sm:inline">שיקוף וואטסאפ</span>
+            <span className="hidden lg:inline">שיקוף</span>
             <span className="bg-[#00a884] text-[#111b21] text-[9px] font-black px-1.5 py-0.2 rounded-full">
-              🟢 Live
+              Live
             </span>
           </button>
         )}
