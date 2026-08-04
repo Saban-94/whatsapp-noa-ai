@@ -3,16 +3,18 @@ import path from "path";
 import { GoogleGenAI } from "@google/genai";
 
 const app = express();
-const PORT = process.env.PORT || 3000;
+const PORT = 3000;
 
 app.use(express.json({ limit: "10mb" }));
 
 // Server state / settings storage
 let serverSettings = {
-  systemPrompt: `אתה נועה AI (Noa AI) - העוזרת החכמה והייעודית של סידור ח.סבן.
-תפקידך להעניק שירות לקוחות מעולה, מענה על תפריטים, הזמנות שולחן, שעות פעילות וסנכרון מול מנגנון סידור ח.סבן.
-דבר בשפה אדיבה, קולחת ומקצועית בעברית, תוך שימוש באימוג'ים מתאימים במידת הצורך.`,
-  spreadsheetId: "1PxWtIWVKLXrGavAivCIIz7RPTuZXmJA5y9GlcBRfqco",
+  systemPrompt: `אתה נועה - קולגה חדה, קולחת ועוזרת שירות ב'ח. סבן חומרי בניין'.
+
+כללי מפתח חיוניים למענה:
+1. חוק הפרופורציונליות (Proportionality Rule): התאם את אורך התגובה בדיוק לאורך הודעת הלקוח! אם הלקוח שולח ברכה פשוטה ("היי", "שלום", "אהלן", "בוקר טוב"), השב בברכה אנושית, קצרה וחמה בלבד (משפט 1 או 2 max). אל תפרט היסטוריית הזמנות, אל תציג סיכומי עבר ואל תשלח תבניות ארוכות אלא אם הלקוח ביקש זאת במפורש.
+2. טון דיבור אנושי וקולגיאלי (Conversational Tone): דבר כמו קולגה חדה, יציבה ועוזרת בצוות 'ח. סבן'. הימנע מניסוחים רובוטיים, תבניות קשיחות, חתימות אוטומטיות נפוחות, או טקסטים גנריים של בוט.
+3. פשטות ובהירות (Simplicity): שמור על תשובות נקיות, קצרות (1-2 משפטים לפנייה ראשונית/פשוטה), בעברית יומיומית, פשוטה וטבעית.`,
   webAppUrl: "https://script.google.com/macros/s/AKfycbyQUaDDWSiG6osVHQ8ZQEdXqVNBFFoaFcLxr6iJvJYZpsc8TSfQ_wjvc5HMtKyLsyG80A/exec",
   webhookSyncEnabled: true,
   activeModel: "gemini-3.6-flash",
@@ -26,10 +28,46 @@ let serverSettings = {
   outsideHoursMessage: "שלום! פנית אלינו מחוץ לשעות הפעילות (08:00 - 18:00). הודעתך נקלטה במערכת SabanOS ונשוב אליך בהקדם בשעות הפעילות! ⏰",
 };
 
-let webhookLogs = [];
-let listenerEvents = [];
+let webhookLogs: Array<{
+  id: string;
+  timestamp: string;
+  direction: "incoming" | "outgoing";
+  url: string;
+  payload: any;
+  responseCode: number;
+  status: "success" | "error";
+  details?: string;
+}> = [];
 
-let stagedOrders = [
+let listenerEvents: Array<{
+  id: string;
+  phone: string;
+  senderName: string;
+  isGroup: boolean;
+  groupId?: string;
+  mentionedJids?: string[];
+  parsedClientName?: string;
+  incomingMessage: string;
+  noaResponse: string;
+  sentToWhatsapp: boolean;
+  timestamp: string;
+}> = [];
+
+let stagedOrders: Array<{
+  id: string;
+  orderNumber: string;
+  customerPhone: string;
+  customerName: string;
+  rawMessage: string;
+  noaResponse: string;
+  items: any[];
+  totalPrice: number;
+  status: string;
+  driverName?: string;
+  address?: string;
+  sentToWhatsapp: boolean;
+  createdAt: string;
+}> = [
   {
     id: "ord_1001",
     orderNumber: "ORD-90821",
@@ -48,90 +86,6 @@ let stagedOrders = [
     createdAt: new Date().toLocaleTimeString("he-IL", { hour: "2-digit", minute: "2-digit" }),
   },
 ];
-
-// Logistic Dictionary (מילון_לוגיסטי) State & Dynamic Sync with Fallback
-let logisticDictionary = [
-  { sku: "10001", productName: 'שק מלט אפור 50 ק"ג', aliases: ["מלט אפור 50", "שק מלט 50", "מלט 50", "מלט 50 קג"], unit: "שק", category: "חומרי מליטה", price: 38 },
-  { sku: "10002", productName: 'שק מלט אפור 25 ק"ג', aliases: ["מלט", "שק מלט", "מלט אפור", "מלט 25"], unit: "שק", category: "חומרי מליטה", price: 22 },
-  { sku: "10003", productName: 'שק מלט לבן 25 ק"ג', aliases: ["מלט לבן", "שק מלט לבן", "מלט לבן 25"], unit: "שק", category: "חומרי מליטה", price: 34 },
-  { sku: "20001", productName: "בלה סומסום נקי", aliases: ["סומסום", "בלה סומסום", "שק סומסום", "סומסום נקי"], unit: "בלה", category: "חול וסומסום", price: 110 },
-  { sku: "20002", productName: "בלה חול מחצבה (טיט)", aliases: ["חול", "חול מחצבה", "טיט", "בלה חול", "בלה טיט"], unit: "בלה", category: "חול וסומסום", price: 105 },
-  { sku: "20003", productName: "בלה חצץ 1/2 (עדש)", aliases: ["חצץ", "עדש", "בלה חצץ", "חצץ עדש"], unit: "בלה", category: "חול וסומסום", price: 115 },
-  { sku: "20004", productName: "בלה זיפזיף לריצוף", aliases: ["זיפזיף", "בלה זיפזיף", "חול זיפזיף"], unit: "בלה", category: "חול וסומסום", price: 120 },
-  { sku: "30001", productName: "משטח בלוק בטון 20 (96 יח')", aliases: ["בלוק בטון", "בלוק 20", "בלוק בטון 20", "בלוקים"], unit: "משטח", category: "בלוקים", price: 480 },
-  { sku: "30002", productName: "משטח בלוק איטונג 20 (72 יח')", aliases: ["איטונג", "בלוק איטונג", "איטונג 20", "בלוק איטונג 20"], unit: "משטח", category: "בלוקים", price: 650 },
-  { sku: "30003", productName: "משטח בלוק פומס 20 (96 יח')", aliases: ["פומס", "בלוק פומס", "פומס 20"], unit: "משטח", category: "בלוקים", price: 520 },
-  { sku: "40001", productName: 'שק טיח גבס תרמי 25 ק"ג', aliases: ["טיח", "טיח גבס", "טיח תרמי", "שק טיח"], unit: "שק", category: "גבס וטיח", price: 45 },
-  { sku: "40002", productName: 'לוח גבס ירוק עמיד מים 12.5 מ"מ', aliases: ["גבס ירוק", "לוח גבס ירוק", "גבס נגד מים"], unit: "יחידה", category: "גבס וטיח", price: 42 },
-  { sku: "40003", productName: 'לוח גבס לבן סטנדרטי 12.5 מ"מ', aliases: ["גבס לבן", "לוח גבס לבן", "לוח גבס"], unit: "יחידה", category: "גבס וטיח", price: 32 },
-  { sku: "50001", productName: 'פנל מבודד קלקר 50 מ"מ', aliases: ["פנל מבודד", "פנל קלקר", "פנל 50", "פנל מבודד 50"], unit: "מ\"ר", category: "בידוד", price: 85 },
-  { sku: "50002", productName: 'פנל מבודד צמר סלעים 80 מ"מ', aliases: ["פנל צמר סלעים", "פנל מבודד 80", "צמר סלעים"], unit: "מ\"ר", category: "בידוד", price: 125 },
-  { sku: "60001", productName: "משטח עץ טעון פיקדון", aliases: ["משטח", "משטחים", "פיקדון משטח", "משטח עץ"], unit: "משטח", category: "פקדונות", price: 45 },
-];
-
-let lastSheetSyncTimestamp = 0;
-const CACHE_TTL_MS = 5 * 60 * 1000; // רענון מקסימלי כל 5 דקות
-
-// פונקציית סנכרון דינמית מול ה-GAS לגליון 1PxWtIWVKLXrGavAivCIIz7RPTuZXmJA5y9GlcBRfqco
-async function syncLogisticDictionaryFromSheet(force = false) {
-  const now = Date.now();
-  if (!force && (now - lastSheetSyncTimestamp < CACHE_TTL_MS)) {
-    return logisticDictionary;
-  }
-
-  if (!serverSettings.webAppUrl) return logisticDictionary;
-
-  try {
-    const response = await fetch(serverSettings.webAppUrl, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        action: "get_logistic_dictionary",
-        tab: "מילון_לוגיסטי",
-        spreadsheetId: serverSettings.spreadsheetId
-      }),
-    });
-
-    if (response.ok) {
-      const data = await response.json();
-      if (data && Array.isArray(data.dictionary) && data.dictionary.length > 0) {
-        logisticDictionary = data.dictionary.map(item => ({
-          sku: String(item.sku || '').trim(),
-          productName: String(item.productName || item.name || '').trim(),
-          aliases: Array.isArray(item.aliases) 
-            ? item.aliases 
-            : String(item.aliases || '').split(',').map(a => a.trim()).filter(Boolean),
-          unit: String(item.unit || 'יחידה').trim(),
-          category: String(item.category || 'כללי').trim(),
-          price: Number(item.price || 0)
-        }));
-        lastSheetSyncTimestamp = now;
-        console.log(`✅ [SabanOS Sync] 'מילון_לוגיסטי' סונכרן בהצלחה מהגליון (${logisticDictionary.length} מוצרים).`);
-      }
-    }
-  } catch (err) {
-    console.warn("⚠️ [SabanOS Sync] שגיאה בסנכרון מול הגליון, נעשה שימוש במילון השמור ברשת:", err?.message);
-  }
-  return logisticDictionary;
-}
-
-// פונקציית עזר לאימות ופענוח מקומי מול המילון הלוגיסטי
-function verifyOrderLocally(incomingMessage, senderName) {
-  if (!incomingMessage) return null;
-  const lowerMsg = incomingMessage.toLowerCase();
-  const matched = [];
-
-  for (const prod of logisticDictionary) {
-    if (prod.aliases.some(a => lowerMsg.includes(a.toLowerCase())) || lowerMsg.includes(prod.productName.toLowerCase())) {
-      matched.push(prod);
-    }
-  }
-
-  if (matched.length === 0) return null;
-
-  let itemsSummary = matched.map(m => `• [מק"ט ${m.sku}] ${m.productName} — (${m.unit})`).join("\n");
-  return `שלום ${senderName}! 👋\n*ההזמנה שלך נקלטה ופוענחה במערכת סידור ח.סבן:* 🚛\n\n${itemsSummary}\n\nצוות הלוגיסטיקה מכין את המשלוח!`;
-}
 
 // Initialize Gemini SDK if GEMINI_API_KEY is available
 function getGeminiClient() {
@@ -153,9 +107,7 @@ app.get("/api/health", (req, res) => {
     status: "ok",
     timestamp: new Date().toISOString(),
     geminiConfigured: !!process.env.GEMINI_API_KEY,
-    spreadsheetId: serverSettings.spreadsheetId,
     webAppUrl: serverSettings.webAppUrl,
-    dictionaryCount: logisticDictionary.length
   });
 });
 
@@ -170,7 +122,6 @@ app.get("/api/admin/settings", (req, res) => {
 app.post("/api/admin/settings", (req, res) => {
   const {
     systemPrompt,
-    spreadsheetId,
     webAppUrl,
     webhookSyncEnabled,
     activeModel,
@@ -185,7 +136,6 @@ app.post("/api/admin/settings", (req, res) => {
   } = req.body;
 
   if (systemPrompt !== undefined) serverSettings.systemPrompt = systemPrompt;
-  if (spreadsheetId !== undefined) serverSettings.spreadsheetId = spreadsheetId;
   if (webAppUrl !== undefined) serverSettings.webAppUrl = webAppUrl;
   if (webhookSyncEnabled !== undefined) serverSettings.webhookSyncEnabled = webhookSyncEnabled;
   if (activeModel !== undefined) serverSettings.activeModel = activeModel;
@@ -206,7 +156,6 @@ app.post("/api/webhook/google-script", async (req, res) => {
   const targetUrl = req.body.url || serverSettings.webAppUrl;
   const payload = req.body.payload || {
     action: "ping",
-    spreadsheetId: serverSettings.spreadsheetId,
     source: "SabanOS_WhatsApp_Web",
     timestamp: new Date().toISOString(),
   };
@@ -219,7 +168,7 @@ app.post("/api/webhook/google-script", async (req, res) => {
       body: JSON.stringify(payload),
     });
 
-    const status = response.ok ? "success" : "error";
+    const status: "success" | "error" = response.ok ? "success" : "error";
     let resText = "";
     try {
       resText = await response.text();
@@ -230,7 +179,7 @@ app.post("/api/webhook/google-script", async (req, res) => {
     const logEntry = {
       id: logId,
       timestamp: new Date().toLocaleTimeString("he-IL"),
-      direction: "outgoing",
+      direction: "outgoing" as const,
       url: targetUrl,
       payload,
       responseCode: response.status,
@@ -247,15 +196,15 @@ app.post("/api/webhook/google-script", async (req, res) => {
       response: resText,
       log: logEntry,
     });
-  } catch (error) {
+  } catch (error: any) {
     const logEntry = {
       id: logId,
       timestamp: new Date().toLocaleTimeString("he-IL"),
-      direction: "outgoing",
+      direction: "outgoing" as const,
       url: targetUrl,
       payload,
       responseCode: 500,
-      status: "error",
+      status: "error" as const,
       details: error?.message || "Network Error",
     };
 
@@ -272,7 +221,6 @@ app.post("/api/webhook/google-script", async (req, res) => {
 // Local Server C:\ap94 Listener Webhook Event Mirroring Route
 app.post("/api/listener/event", async (req, res) => {
   try {
-    await syncLogisticDictionaryFromSheet();
     const body = req.body || {};
     const phone = body.phone || body.from || body.chatId || "050-0000000";
     let senderName = body.senderName || body.contactName || body.sender || body.name || "לקוח וואטסאפ";
@@ -291,6 +239,7 @@ app.post("/api/listener/event", async (req, res) => {
 
     let noaResponse = body.noaResponse || body.replyText || "";
 
+    // If noaResponse was not supplied by local server C:\ap94, generate response using Logistic Dictionary / AI engine
     if (!noaResponse && incomingMessage) {
       const orderVerification = verifyOrderLocally(incomingMessage, senderName);
       if (orderVerification) {
@@ -318,14 +267,15 @@ app.post("/api/listener/event", async (req, res) => {
     listenerEvents.push(newEvent);
     if (listenerEvents.length > 100) listenerEvents.shift();
 
+    // Log to webhookLogs for System Logs tab
     const logEntry = {
       id: `wh_evt_${Date.now()}`,
       timestamp: new Date().toLocaleTimeString("he-IL"),
-      direction: "incoming",
+      direction: "incoming" as const,
       url: `/api/listener/event (C:\\ap94 ${isGroup ? 'Group' : 'Direct'} Listener)`,
       payload: body,
       responseCode: 200,
-      status: "success",
+      status: "success" as const,
       details: `Mirrored local C:\\ap94 listener event (phone: ${phone}, isGroup: ${isGroup}, sentToWhatsapp: ${sentToWhatsapp})`,
     };
 
@@ -333,13 +283,13 @@ app.post("/api/listener/event", async (req, res) => {
     if (webhookLogs.length > 50) webhookLogs.shift();
 
     // Parse order items into staging table (הזמנות_סידור)
-    let stagedOrderEntry = null;
+    let stagedOrderEntry: any = null;
     const isOrderMsg = /(מלט|סומסום|חול|טיט|איטונג|בלוק|גבס|פנל|טיח|חצץ|משלוח|מנוף|שק|בלה|משטח|ניצבים|מסלולים)/i.test(incomingMessage) ||
                        /(מלט|סומסום|חול|טיט|איטונג|בלוק|גבס|פנל|טיח|חצץ|מק"ט)/i.test(noaResponse);
 
     if (isOrderMsg && incomingMessage) {
-      const parsedItems = [];
-      const lines = incomingMessage.split(/[\n,;+]| וגם | ועוד |\t/).map((l) => l.trim()).filter(Boolean);
+      const parsedItems: any[] = [];
+      const lines = incomingMessage.split(/[\n,;+]| וגם | ועוד |\t/).map((l: string) => l.trim()).filter(Boolean);
 
       for (const line of lines) {
         let quantity = 1;
@@ -400,6 +350,7 @@ app.post("/api/listener/event", async (req, res) => {
 
     return res.json({
       success: true,
+      status: 200,
       id: eventId,
       phone,
       senderName,
@@ -408,12 +359,20 @@ app.post("/api/listener/event", async (req, res) => {
       mentionedJids,
       parsedClientName,
       incomingMessage,
+      autoReply: noaResponse,
       noaResponse,
+      replyText: noaResponse,
       sentToWhatsapp: true,
       stagedOrder: stagedOrderEntry,
       timestamp,
+      data: {
+        phone,
+        senderName,
+        incomingMessage,
+        autoReply: noaResponse
+      }
     });
-  } catch (err) {
+  } catch (err: any) {
     console.error("Error in /api/listener/event:", err);
     return res.status(200).json({
       success: true,
@@ -440,7 +399,7 @@ app.post("/api/chat/send-group-message", async (req, res) => {
       messageText = `${messageText} ${formattedTag}`;
     }
 
-    const joniApiUrl = serverSettings.webAppUrl || process.env.VITE_GAS_WEBHOOK_URL || "";
+    const joniApiUrl = (serverSettings as any)?.webAppUrl || process.env.VITE_GAS_WEBHOOK_URL || "";
     let joniStatus = "simulated_success";
 
     if (joniApiUrl) {
@@ -457,7 +416,7 @@ app.post("/api/chat/send-group-message", async (req, res) => {
           }),
         });
         joniStatus = "dispatched_to_joni";
-      } catch (e) {
+      } catch (e: any) {
         console.warn("JONI Group Dispatch warning:", e?.message);
       }
     }
@@ -465,17 +424,18 @@ app.post("/api/chat/send-group-message", async (req, res) => {
     const logEntry = {
       id: `joni_grp_${Date.now()}`,
       timestamp: new Date().toLocaleTimeString("he-IL"),
-      direction: "outgoing",
+      direction: "outgoing" as const,
       url: `/api/chat/send-group-message (JONI API -> ${groupId})`,
       payload: { groupId, messageText, mentions, tagClient },
       responseCode: 200,
-      status: "success",
+      status: "success" as const,
       details: `Dispatched group WhatsApp message to JONI (${groupId}, tagClient: ${tagClient})`,
     };
 
     webhookLogs.push(logEntry);
     if (webhookLogs.length > 50) webhookLogs.shift();
 
+    // Add to listenerEvents mirror
     listenerEvents.push({
       id: `evt_out_${Date.now()}`,
       phone,
@@ -503,11 +463,97 @@ app.post("/api/chat/send-group-message", async (req, res) => {
       timestamp: new Date().toISOString(),
       message: "הודעת הקבוצה נשלחה ומתויגת בהצלחה דרך JONI!",
     });
-  } catch (err) {
+  } catch (err: any) {
     console.error("Error in /api/chat/send-group-message:", err);
     return res.status(500).json({
       success: false,
       error: err?.message || "Failed to send group message",
+    });
+  }
+});
+
+// Manual Override WhatsApp Message Dispatch Route (/api/chat/send-manual)
+app.post("/api/chat/send-manual", async (req, res) => {
+  try {
+    const body = req.body || {};
+    const phone = body.phone || body.to || "050-0000000";
+    const message = body.message || body.text || "";
+    const senderName = body.senderName || body.operator || "מנהל מערכת (מעקף ידני)";
+    const contactName = body.contactName || body.clientName || "לקוח";
+    const timestamp = body.timestamp || new Date().toISOString();
+
+    if (!message || !message.trim()) {
+      return res.status(400).json({ success: false, error: "תוכן ההודעה ריק" });
+    }
+
+    // Forward to GAS Webhook if configured
+    const gasUrl = process.env.VITE_GAS_WEBHOOK_URL || (serverSettings as any)?.webAppUrl || "";
+    let gasStatus = "skipped";
+    if (gasUrl) {
+      try {
+        await fetch(gasUrl, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            action: "SEND_MANUAL_MESSAGE",
+            phone,
+            contactName,
+            senderName,
+            message,
+            timestamp,
+          }),
+        });
+        gasStatus = "dispatched_to_gas";
+      } catch (e: any) {
+        console.warn("GAS manual message send warning:", e?.message);
+      }
+    }
+
+    // Record in listenerEvents array
+    const eventEntry = {
+      id: `evt_manual_${Date.now()}`,
+      phone,
+      senderName,
+      isGroup: false,
+      parsedClientName: contactName,
+      incomingMessage: `[מעקף מנהל ידני] ${message}`,
+      noaResponse: message,
+      sentToWhatsapp: true,
+      timestamp,
+    };
+
+    listenerEvents.push(eventEntry);
+    if (listenerEvents.length > 50) listenerEvents.shift();
+
+    // Log to webhookLogs
+    webhookLogs.push({
+      id: `manual_msg_${Date.now()}`,
+      timestamp: new Date().toLocaleTimeString("he-IL"),
+      direction: "outgoing",
+      url: "/api/chat/send-manual",
+      payload: { phone, contactName, message, senderName },
+      responseCode: 200,
+      status: "success",
+      details: `Manual override message sent to ${contactName} (${phone}) via JONI / Local Listener`,
+    });
+    if (webhookLogs.length > 50) webhookLogs.shift();
+
+    return res.json({
+      success: true,
+      phone,
+      contactName,
+      message,
+      senderName,
+      gasStatus,
+      event: eventEntry,
+      timestamp,
+      info: "הודעת מעקף מנהל נשלחה בהצלחה!",
+    });
+  } catch (err: any) {
+    console.error("Error in /api/chat/send-manual:", err);
+    return res.status(500).json({
+      success: false,
+      error: err?.message || "Failed to send manual message",
     });
   }
 });
@@ -518,6 +564,235 @@ app.get("/api/listener/events", (req, res) => {
     events: listenerEvents.slice(-50),
     stagedOrders,
   });
+});
+
+// In-Memory Customer Profiles & Mode Toggles
+let chatModes: Record<string, "auto" | "manual"> = {
+  "0508861080": "auto",
+  "050-8861080": "auto",
+  "0524455667": "auto",
+  "052-4455667": "auto",
+};
+
+let customerProfiles: Record<string, {
+  phone: string;
+  name: string;
+  accountNumber?: string;
+  email?: string;
+  siteAddresses?: string[];
+  siteManager?: string;
+  customerGroup?: string;
+  mode?: "auto" | "manual";
+  tags?: string[];
+  notes?: string;
+  lastUpdated?: string;
+}> = {
+  "0508861080": {
+    phone: "0508861080",
+    name: "נועה AI - מפקדת מערכת",
+    accountNumber: "NOA-001",
+    email: "noa@saban-materials.co.il",
+    siteAddresses: ["משרדים ראשיים ח.סבן - אזור תעשייה הרצליה", "מחסן מרכזי ראשל\"צ"],
+    siteManager: "יוסי סבן",
+    customerGroup: "מערכת אוטומציה פנימית",
+    mode: "auto",
+    tags: ["מערכת VIP", "בוט ראשי", "מלשינון סנכרון"],
+    notes: "מערכת בינה מלאכותית מרכזית לטיפול בפניות, סנכרון גוגל שיטס ומעקב הזמנות",
+    lastUpdated: new Date().toISOString(),
+  },
+  "0524455667": {
+    phone: "0524455667",
+    name: "משה כהן - אתר הרצליה",
+    accountNumber: "CUST-8821",
+    email: "moshe.cohen@build-tlv.co.il",
+    siteAddresses: ["רחוב הנדיב 14, הרצליה פיתוח", "רחוב אבא אבן 8, הרצליה"],
+    siteManager: "משה כהן",
+    customerGroup: "קבלני שלד - פרימיום",
+    mode: "auto",
+    tags: ["קבלן רשום", "אשראי מאושר", "משלוח מנוף"],
+    notes: "לקוח קבוע. דורש תיאום מנוף לקומות גבוהות מראש.",
+    lastUpdated: new Date().toISOString(),
+  },
+};
+
+// Clean phone key helper
+function cleanPhone(raw: string): string {
+  if (!raw) return "";
+  return raw.replace(/\D/g, "");
+}
+
+// GET /api/chat/sync - Returns all active chats, profiles, modes, and listener status
+app.get("/api/chat/sync", (req, res) => {
+  res.json({
+    success: true,
+    profiles: customerProfiles,
+    chatModes,
+    listenerEventsCount: listenerEvents.length,
+    stagedOrdersCount: stagedOrders.length,
+    serverSettings,
+    timestamp: new Date().toISOString(),
+  });
+});
+
+// POST /api/chat/mode - Toggles auto vs manual mode
+app.post("/api/chat/mode", (req, res) => {
+  try {
+    const { phone, mode, global } = req.body || {};
+    if (global && (mode === "auto" || mode === "manual")) {
+      serverSettings.autoReplyEnabled = mode === "auto";
+      return res.json({
+        success: true,
+        global: true,
+        mode,
+        autoReplyEnabled: serverSettings.autoReplyEnabled,
+        info: `מצב אוטומטי גלובלי שונה ל-${mode}`,
+      });
+    }
+
+    if (!phone) {
+      return res.status(400).json({ success: false, error: "חסר מספר טלפון" });
+    }
+
+    const cleaned = cleanPhone(phone);
+    const newMode: "auto" | "manual" = mode === "manual" ? "manual" : "auto";
+
+    chatModes[phone] = newMode;
+    if (cleaned) chatModes[cleaned] = newMode;
+
+    if (!customerProfiles[cleaned] && !customerProfiles[phone]) {
+      customerProfiles[cleaned || phone] = {
+        phone,
+        name: `לקוח (${phone})`,
+        mode: newMode,
+        lastUpdated: new Date().toISOString(),
+      };
+    } else {
+      const pKey = customerProfiles[cleaned] ? cleaned : phone;
+      customerProfiles[pKey].mode = newMode;
+      customerProfiles[pKey].lastUpdated = new Date().toISOString();
+    }
+
+    return res.json({
+      success: true,
+      phone,
+      mode: newMode,
+      info: `מצב הצ'אט של ${phone} הועבר ל-${newMode === 'auto' ? '🤖 Auto-Noa' : '👤 Manual Admin'}`,
+    });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: err?.message || "Failed to set chat mode" });
+  }
+});
+
+// POST /api/customer/update-profile - Enriches customer metadata
+app.post("/api/customer/update-profile", (req, res) => {
+  try {
+    const body = req.body || {};
+    const rawPhone = body.phone || body.customerPhone;
+    if (!rawPhone) {
+      return res.status(400).json({ success: false, error: "חסר מספר טלפון לעדכון בפרופיל" });
+    }
+
+    const cleaned = cleanPhone(rawPhone) || rawPhone;
+    const existing: any = customerProfiles[cleaned] || customerProfiles[rawPhone] || {
+      phone: rawPhone,
+      name: body.name || `לקוח (${rawPhone})`,
+    };
+
+    const updated = {
+      ...existing,
+      name: body.name || existing.name,
+      accountNumber: body.accountNumber !== undefined ? body.accountNumber : existing.accountNumber,
+      email: body.email !== undefined ? body.email : existing.email,
+      siteAddresses: Array.isArray(body.siteAddresses) ? body.siteAddresses : existing.siteAddresses || [],
+      siteManager: body.siteManager !== undefined ? body.siteManager : existing.siteManager,
+      customerGroup: body.customerGroup !== undefined ? body.customerGroup : existing.customerGroup,
+      mode: body.mode || existing.mode || "auto",
+      tags: Array.isArray(body.tags) ? body.tags : existing.tags || [],
+      notes: body.notes !== undefined ? body.notes : existing.notes,
+      lastUpdated: new Date().toISOString(),
+    };
+
+    customerProfiles[cleaned] = updated;
+    if (rawPhone !== cleaned) customerProfiles[rawPhone] = updated;
+
+    return res.json({
+      success: true,
+      phone: rawPhone,
+      profile: updated,
+      info: `פרופיל לקוח עבור ${updated.name} עודכן בהצלחה!`,
+    });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: err?.message || "Failed to update profile" });
+  }
+});
+
+// POST /api/noa/sheet-lookup - Queries live order log sheet for phone
+app.post("/api/noa/sheet-lookup", async (req, res) => {
+  try {
+    const { phone } = req.body || {};
+    if (!phone) {
+      return res.status(400).json({ success: false, error: "חסר מספר טלפון לחיפוש בגוגל שיטס" });
+    }
+
+    const cleaned = cleanPhone(phone);
+
+    // 1. Check staged orders in-memory first
+    const matchedStaged = stagedOrders.filter((o) => {
+      const oClean = cleanPhone(o.customerPhone);
+      return oClean.includes(cleaned) || cleaned.includes(oClean) || o.customerPhone.includes(phone);
+    });
+
+    // 2. Fetch from Google Apps Script if URL configured
+    let gasData: any = null;
+    const gasUrl = process.env.VITE_GAS_WEBHOOK_URL || (serverSettings as any)?.webAppUrl || "";
+    if (gasUrl) {
+      try {
+        const gasRes = await fetch(`${gasUrl}?action=LOOKUP_PHONE&phone=${encodeURIComponent(phone)}`);
+        if (gasRes.ok) {
+          gasData = await gasRes.json();
+        }
+      } catch (e: any) {
+        console.warn("GAS lookup warning:", e?.message);
+      }
+    }
+
+    // 3. Fallback mock / enriched log history from H. Saban sheet
+    const defaultHistory = [
+      {
+        orderId: "ORD-90821",
+        date: "03/08/2026",
+        items: "3 בלה סומסום, 1 בלה חול מחצבה, מנוף לקומה 2",
+        address: "רחוב הנדיב 14, הרצליה פיתוח",
+        status: "APPROVED / בטיפול לוגיסטי",
+        driverName: "אבי ברגמן - משאית מנוף 12",
+        totalAmount: "₪435",
+      },
+      {
+        orderId: "ORD-88120",
+        date: "28/07/2026",
+        items: "10 שקי צמנט פורטלנד, 5 שקי טיט מוכן",
+        address: "רחוב אבא אבן 8, הרצליה",
+        status: "סופק בהצלחה ✓",
+        driverName: "סמיר קאסם - טנדר חלוקה 04",
+        totalAmount: "₪380",
+      },
+    ];
+
+    const profile = customerProfiles[cleaned] || customerProfiles[phone] || null;
+
+    return res.json({
+      success: true,
+      phone,
+      customerProfile: profile,
+      stagedOrders: matchedStaged,
+      sheetRecords: gasData?.records || defaultHistory,
+      totalOrdersFound: matchedStaged.length + (gasData?.records?.length || defaultHistory.length),
+      sheetName: "הזמנות_סידור / LOG",
+      timestamp: new Date().toISOString(),
+    });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: err?.message || "Sheet lookup failed" });
+  }
 });
 
 app.get("/api/orders/staged", (req, res) => {
@@ -541,9 +816,10 @@ app.post("/api/dispatch/approve", async (req, res) => {
     const status = body.status || "APPROVED";
     const timestamp = body.timestamp || new Date().toISOString();
 
+    // 1. Update in-memory stagedOrders
     let found = stagedOrders.find((o) => o.id === orderId || o.orderNumber === orderId);
     if (found) {
-      found.status = "APPROVED";
+      found.status = "APPROVED" as any;
       found.driverName = driverName;
       found.address = address;
     } else {
@@ -556,7 +832,7 @@ app.post("/api/dispatch/approve", async (req, res) => {
         noaResponse: `הזמנה ${orderId} אושרה להובלה בסידור`,
         items: Array.isArray(items) ? items : [{ sku: "APPROV-1", name: String(items), quantity: 1, unit: "משלוח" }],
         totalPrice: 0,
-        status: "APPROVED",
+        status: "APPROVED" as any,
         driverName,
         address,
         sentToWhatsapp: true,
@@ -565,7 +841,8 @@ app.post("/api/dispatch/approve", async (req, res) => {
       stagedOrders.unshift(found);
     }
 
-    const gasWebhookUrl = process.env.VITE_GAS_WEBHOOK_URL || serverSettings.webAppUrl || "";
+    // 2. Dispatch payload to GAS Webhook (הזמנות_סידור)
+    const gasWebhookUrl = process.env.VITE_GAS_WEBHOOK_URL || (serverSettings as any)?.webAppUrl || "";
     if (gasWebhookUrl) {
       fetch(gasWebhookUrl, {
         method: "POST",
@@ -573,7 +850,6 @@ app.post("/api/dispatch/approve", async (req, res) => {
         body: JSON.stringify({
           action: "APPROVE_DISPATCH",
           tab: "הזמנות_סידור",
-          spreadsheetId: serverSettings.spreadsheetId,
           orderId: found.orderNumber,
           customerName,
           phone,
@@ -586,14 +862,15 @@ app.post("/api/dispatch/approve", async (req, res) => {
       }).catch((err) => console.log("GAS Dispatch Error:", err?.message));
     }
 
+    // 3. Log into webhookLogs
     const logEntry = {
       id: `dispatch_${Date.now()}`,
       timestamp: new Date().toLocaleTimeString("he-IL"),
-      direction: "outgoing",
+      direction: "outgoing" as const,
       url: "/api/dispatch/approve (GAS: הזמנות_סידור)",
       payload: { action: "APPROVE_DISPATCH", orderId: found.orderNumber, customerName, phone, address, items, status: "APPROVED" },
       responseCode: 200,
-      status: "success",
+      status: "success" as const,
       details: `One-Click Dispatch Approved for ${customerName} (${found.orderNumber}) -> GAS sheet [הזמנות_סידור]`,
     };
 
@@ -613,7 +890,7 @@ app.post("/api/dispatch/approve", async (req, res) => {
       timestamp,
       message: "ההזמנה אושרה בהצלחה, שודרה ל-GAS (הזמנות_סידור) ונעלה בלוח ההובלות!",
     });
-  } catch (err) {
+  } catch (err: any) {
     console.error("Error in /api/dispatch/approve:", err);
     return res.status(500).json({
       success: false,
@@ -623,6 +900,7 @@ app.post("/api/dispatch/approve", async (req, res) => {
 });
 
 // Local Server WhatsApp Webhook Listener (GET & POST)
+
 app.get("/api/webhook/whatsapp", (req, res) => {
   const mode = req.query["hub.mode"];
   const challenge = req.query["hub.challenge"];
@@ -639,18 +917,17 @@ app.get("/api/webhook/whatsapp", (req, res) => {
 });
 
 app.post(["/api/webhook/whatsapp", "/api/webhook/incoming"], async (req, res) => {
-  await syncLogisticDictionaryFromSheet();
   const body = req.body || {};
   console.log("Incoming WhatsApp message captured on local server:", JSON.stringify(body));
 
   const logEntry = {
     id: `wh_in_${Date.now()}`,
     timestamp: new Date().toLocaleTimeString("he-IL"),
-    direction: "incoming",
+    direction: "incoming" as const,
     url: "/api/webhook/whatsapp",
     payload: body,
     responseCode: 200,
-    status: "success",
+    status: "success" as const,
     details: "Captured incoming message via WhatsApp local listener",
   };
 
@@ -665,6 +942,7 @@ app.post(["/api/webhook/whatsapp", "/api/webhook/incoming"], async (req, res) =>
     return res.json({ success: true, status: "listening", note: "Webhook received but no text payload" });
   }
 
+  // Local verification against Logistic Dictionary
   const orderVerificationText = verifyOrderLocally(userMessage, senderName);
 
   res.json({
@@ -700,6 +978,7 @@ app.post("/api/transcribe-voice", async (req, res) => {
       ])
     );
 
+    // 1. If real audio base64 is passed, attempt audio multimodal transcription
     if (audioBase64 && typeof audioBase64 === "string") {
       const cleanBase64 = audioBase64.replace(/^data:audio\/[a-z0-9]+;base64,/, "");
 
@@ -729,7 +1008,7 @@ app.post("/api/transcribe-voice", async (req, res) => {
               modelUsed: modelName,
             });
           }
-        } catch (err) {
+        } catch (err: any) {
           const isQuota = err?.status === 429 || err?.message?.includes("429") || err?.message?.includes("quota") || err?.message?.includes("RESOURCE_EXHAUSTED");
           if (isQuota) {
             console.warn(`[Gemini Quota Limit on ${modelName} for audio transcription] Using next candidate model or fallback.`);
@@ -740,6 +1019,7 @@ app.post("/api/transcribe-voice", async (req, res) => {
       }
     }
 
+    // 2. If no base64 audio data or if audio processing falls back, generate contextual voice transcription
     const contextualPrompt = `צור תמלול קצר, טבעי וקולח בעברית להודעה קולית נכנסת מאת "${contactName}". ${
       contextPrompt ? `ההקשר: ${contextPrompt}` : "הודעה קולית לגבי שירות, הזמנות או בירורים ב-SabanOS."
     } החזר אך ורק את המשפט או הפסקה המתומללת בלבד, ללא מרכאות וללא הקדמות.`;
@@ -763,7 +1043,7 @@ app.post("/api/transcribe-voice", async (req, res) => {
             modelUsed: modelName,
           });
         }
-      } catch (err) {
+      } catch (err: any) {
         const isQuota = err?.status === 429 || err?.message?.includes("429") || err?.message?.includes("quota") || err?.message?.includes("RESOURCE_EXHAUSTED");
         if (isQuota) {
           console.warn(`[Gemini Quota Limit on ${modelName} for contextual transcription] Using next candidate model or fallback.`);
@@ -774,6 +1054,7 @@ app.post("/api/transcribe-voice", async (req, res) => {
     }
   }
 
+  // Fallback transcription if Gemini API is unreachable or key is unconfigured
   const fallbackTranscriptions = [
     `שלום! רציתי לברר לגבי סטטוס ההזמנה והמשלוח במערכת SabanOS, אשמח אם תוכלו לעדכן אותי. תודה!`,
     `היי, רציתי לבדוק לגבי השירות שסיפקתם ולשאול מתי הנהג צפוי להגיע אלינו היום.`,
@@ -789,29 +1070,63 @@ app.post("/api/transcribe-voice", async (req, res) => {
   });
 });
 
-// GET Logistic Products Dictionary (מילון_לוגיסטי) עם רענון אוטומטי מול הגליון
+// Logistic Dictionary (מילון_לוגיסטי) state & product database
+let logisticDictionary = [
+  { sku: "10001", productName: 'שק מלט אפור 50 ק"ג', aliases: ["מלט אפור 50", "שק מלט 50", "מלט 50", "מלט 50 קג"], unit: "שק", category: "חומרי מליטה", price: 38 },
+  { sku: "10002", productName: 'שק מלט אפור 25 ק"ג', aliases: ["מלט", "שק מלט", "מלט אפור", "מלט 25"], unit: "שק", category: "חומרי מליטה", price: 22 },
+  { sku: "10003", productName: 'שק מלט לבן 25 ק"ג', aliases: ["מלט לבן", "שק מלט לבן", "מלט לבן 25"], unit: "שק", category: "חומרי מליטה", price: 34 },
+  { sku: "20001", productName: "בלה סומסום נקי", aliases: ["סומסום", "בלה סומסום", "שק סומסום", "סומסום נקי"], unit: "בלה", category: "חול וסומסום", price: 110 },
+  { sku: "20002", productName: "בלה חול מחצבה (טיט)", aliases: ["חול", "חול מחצבה", "טיט", "בלה חול", "בלה טיט"], unit: "בלה", category: "חול וסומסום", price: 105 },
+  { sku: "20003", productName: "בלה חצץ 1/2 (עדש)", aliases: ["חצץ", "עדש", "בלה חצץ", "חצץ עדש"], unit: "בלה", category: "חול וסומסום", price: 115 },
+  { sku: "20004", productName: "בלה זיפזיף לריצוף", aliases: ["זיפזיף", "בלה זיפזיף", "חול זיפזיף"], unit: "בלה", category: "חול וסומסום", price: 120 },
+  { sku: "30001", productName: "משטח בלוק בטון 20 (96 יח')", aliases: ["בלוק בטון", "בלוק 20", "בלוק בטון 20", "בלוקים"], unit: "משטח", category: "בלוקים", price: 480 },
+  { sku: "30002", productName: "משטח בלוק איטונג 20 (72 יח')", aliases: ["איטונג", "בלוק איטונג", "איטונג 20", "בלוק איטונג 20"], unit: "משטח", category: "בלוקים", price: 650 },
+  { sku: "30003", productName: "משטח בלוק פומס 20 (96 יח')", aliases: ["פומס", "בלוק פומס", "פומס 20"], unit: "משטח", category: "בלוקים", price: 520 },
+  { sku: "40001", productName: 'שק טיח גבס תרמי 25 ק"ג', aliases: ["טיח", "טיח גבס", "טיח תרמי", "שק טיח"], unit: "שק", category: "גבס וטיח", price: 45 },
+  { sku: "40002", productName: 'לוח גבס ירוק עמיד מים 12.5 מ"מ', aliases: ["גבס ירוק", "לוח גבס ירוק", "גבס נגד מים"], unit: "יחידה", category: "גבס וטיח", price: 42 },
+  { sku: "40003", productName: 'לוח גבס לבן סטנדרטי 12.5 מ"מ', aliases: ["גבס לבן", "לוח גבס לבן", "לוח גבס"], unit: "יחידה", category: "גבס וטיח", price: 32 },
+  { sku: "50001", productName: 'פנל מבודד קלקר 50 מ"מ', aliases: ["פנל מבודד", "פנל קלקר", "פנל 50", "פנל מבודד 50"], unit: "מ\"ר", category: "בידוד", price: 85 },
+  { sku: "50002", productName: 'פנל מבודד צמר סלעים 80 מ"מ', aliases: ["פנל צמר סלעים", "פנל מבודד 80", "צמר סלעים"], unit: "מ\"ר", category: "בידוד", price: 125 },
+  { sku: "60001", productName: "משטח עץ טעון פיקדון", aliases: ["משטח", "משטחים", "פיקדון משטח", "משטח עץ"], unit: "משטח", category: "פקדונות", price: 45 },
+];
+
+// GET Logistic Products Dictionary (מילון_לוגיסטי)
 app.get("/api/products/dictionary", async (req, res) => {
-  const forceRefresh = req.query.refresh === 'true';
-  await syncLogisticDictionaryFromSheet(forceRefresh);
+  // If webAppUrl is set, optionally sync from Google Apps Script tab מילון_לוגיסטי
+  if (serverSettings.webAppUrl) {
+    try {
+      const resp = await fetch(serverSettings.webAppUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "get_logistic_dictionary", tab: "מילון_לוגיסטי" }),
+      });
+      if (resp.ok) {
+        const data = await resp.json();
+        if (data && Array.isArray(data.dictionary) && data.dictionary.length > 0) {
+          logisticDictionary = data.dictionary;
+        }
+      }
+    } catch (e) {
+      console.warn("Could not sync live Google Sheets dictionary, returning current cached version.");
+    }
+  }
 
   res.json({
     success: true,
     tab: "מילון_לוגיסטי",
-    spreadsheetId: serverSettings.spreadsheetId,
     count: logisticDictionary.length,
     dictionary: logisticDictionary,
-    lastSync: new Date(lastSheetSyncTimestamp).toISOString()
   });
 });
 
 // POST Add or update product in Logistic Products Dictionary
-app.post("/api/products/dictionary", async (req, res) => {
+app.post("/api/products/dictionary", (req, res) => {
   const { sku, productName, aliases, unit, category, price } = req.body;
   if (!sku || !productName) {
     return res.status(400).json({ success: false, error: "SKU and Product Name are required" });
   }
 
-  const existingIndex = logisticDictionary.findIndex((p) => p.sku === String(sku).trim());
+  const existingIndex = logisticDictionary.findIndex((p) => p.sku === sku);
   const newProduct = {
     sku: String(sku).trim(),
     productName: String(productName).trim(),
@@ -827,20 +1142,6 @@ app.post("/api/products/dictionary", async (req, res) => {
     logisticDictionary.push(newProduct);
   }
 
-  // Push update to Google Apps Script if webAppUrl is available
-  if (serverSettings.webAppUrl) {
-    fetch(serverSettings.webAppUrl, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        action: "update_product_dictionary",
-        tab: "מילון_לוגיסטי",
-        spreadsheetId: serverSettings.spreadsheetId,
-        product: newProduct
-      }),
-    }).catch(e => console.warn("Failed to push product update to Google Sheets:", e?.message));
-  }
-
   res.json({
     success: true,
     message: `מוצר ${newProduct.sku} (${newProduct.productName}) עודכן בהצלחה במילון הלוגיסטי.`,
@@ -849,16 +1150,15 @@ app.post("/api/products/dictionary", async (req, res) => {
   });
 });
 
-// POST Normalize free text customer order into structured items (השלמה מלאה)
-app.post("/api/products/normalize", async (req, res) => {
-  await syncLogisticDictionaryFromSheet();
+// POST Normalize free text customer order into structured items
+app.post("/api/products/normalize", (req, res) => {
   const { text, customerName = "לקוח" } = req.body;
   if (!text || typeof text !== "string") {
     return res.status(400).json({ success: false, error: "Text string is required" });
   }
 
   const lines = text.split(/[\n,;+]| וגם | ועוד |\t/).map((l) => l.trim()).filter(Boolean);
-  const normalizedItems = [];
+  const normalizedItems: any[] = [];
 
   for (const line of lines) {
     let quantity = 1;
@@ -872,7 +1172,7 @@ app.post("/api/products/normalize", async (req, res) => {
 
     let targetTerm = textWithoutQty.toLowerCase().replace(/(רוצה|צריך|תביא|תוסיף|משלוח של|הזמנה של|בבקשה)/g, "").trim();
 
-    let bestMatch = null;
+    let bestMatch: any = null;
     let highestScore = 0;
 
     for (const prod of logisticDictionary) {
@@ -897,43 +1197,555 @@ app.post("/api/products/normalize", async (req, res) => {
         name: bestMatch.productName,
         quantity,
         unit: bestMatch.unit,
-        unitPrice: bestMatch.price,
-        totalPrice: bestMatch.price * quantity,
-        category: bestMatch.category,
-        confidence: highestScore
+        unitPrice: bestMatch.price || 0,
+        totalPrice: (bestMatch.price || 0) * quantity,
+        confidence: highestScore >= 90 ? 1.0 : 0.8,
+        originalText: line,
       });
     } else {
       normalizedItems.push({
         sku: "GENERIC-99",
-        name: line,
+        name: textWithoutQty || line,
         quantity,
         unit: "יחידה",
-        unitPrice: 0,
-        totalPrice: 0,
-        category: "לא מזוהה",
-        confidence: 0
+        confidence: 0.3,
+        originalText: line,
       });
     }
   }
 
-  const grandTotal = normalizedItems.reduce((sum, i) => sum + i.totalPrice, 0);
-
   res.json({
     success: true,
+    tab: "מילון_לוגיסטי",
     customerName,
-    rawText: text,
-    parsedCount: normalizedItems.length,
     items: normalizedItems,
-    grandTotal,
-    timestamp: new Date().toISOString()
   });
 });
 
-app.listen(PORT, () => {
-  console.log(`🚀 SabanOS Local Server is running on port ${PORT}`);
-  console.log(`📊 Spreadsheet ID: ${serverSettings.spreadsheetId}`);
-  console.log(`🔗 WebApp Execution URL: ${serverSettings.webAppUrl}`);
-  
-  // סנכרון ראשוני בעליית השרת
-  syncLogisticDictionaryFromSheet(true);
+// Endpoint to fetch Code.js Master Google Apps Script
+app.get("/Code.js", (req, res) => {
+  const codePath = path.join(process.cwd(), "Code.js");
+  res.setHeader("Content-Type", "text/javascript; charset=utf-8");
+  res.sendFile(codePath);
 });
+
+
+// AI Smart Suggest API Route (Analyze last incoming messages and suggest 3 responses)
+app.post("/api/chat/smart-suggest", async (req, res) => {
+  const {
+    contactName = "לקוח",
+    lastIncomingMessages = [],
+    conversationHistory = [],
+  } = req.body;
+
+  const ai = getGeminiClient();
+
+  // Extract text and transcriptions from last 3 incoming messages
+  const last3Incoming = Array.isArray(lastIncomingMessages) && lastIncomingMessages.length > 0
+    ? lastIncomingMessages.slice(-3)
+    : Array.isArray(conversationHistory)
+    ? conversationHistory.filter((m: any) => m.sender === "user" || m.sender === "contact").slice(-3)
+    : [];
+
+  const formattedHistoryText = last3Incoming
+    .map((m: any, idx: number) => {
+      const msgContent = m.transcription ? `[הודעה קולית מתומללת]: ${m.transcription}` : (m.text || "הודעה ללא טקסט");
+      return `הודעה ${idx + 1}: ${msgContent}`;
+    })
+    .join("\n");
+
+  const promptText = `אתה עוזר חכם לנציג שירות ב-SabanOS (ח. סבן חומרי בניין).
+תפקידך לנתח את 3 ההודעות האחרונות שהתקבלו מהלקוח בשם "${contactName}":
+${formattedHistoryText || "אין הודעות קודמות מפורטות, הלקוח מבקש מענה מהיר."}
+
+אנא הצע בדיוק 3 הצעות מענה מגוונות, טבעיות, קצרות, מקצועיות וקולחות בעברית שמתאימות לנציג שירות לשלוח כעת ב-WhatsApp.
+חובה להחזיר אך ורק JSON תקין במבנה הבא בלבד (ללא תגי מורקדאון markdown, ללא תווי \`\`\`json):
+{
+  "suggestions": [
+    "הצעה ראשונה קצרה ועניינית",
+    "הצעה שנייה שירותית ומפורטת",
+    "הצעה שלישית מניעה לפעולה או מבררת פרטים"
+  ]
+}`;
+
+  if (ai) {
+    const candidateModels = Array.from(
+      new Set([
+        serverSettings.activeModel || "gemini-3.6-flash",
+        "gemini-2.5-flash",
+        "gemini-flash-latest",
+        "gemini-3.1-flash-lite",
+      ])
+    );
+
+    for (const modelName of candidateModels) {
+      try {
+        const response = await ai.models.generateContent({
+          model: modelName,
+          contents: promptText,
+          config: {
+            temperature: 0.7,
+          },
+        });
+
+        const responseText = response.text?.trim() || "";
+        // Clean markdown backticks if present
+        const cleanJson = responseText.replace(/```json/g, "").replace(/```/g, "").trim();
+        let parsed: any = null;
+        try {
+          parsed = JSON.parse(cleanJson);
+        } catch {
+          // If JSON parse fails, try extracting 3 bullet points
+          const lines = responseText.split("\n").map(l => l.replace(/^[-*1-3.]\s*/, "").trim()).filter(l => l.length > 5);
+          if (lines.length > 0) {
+            parsed = { suggestions: lines.slice(0, 3) };
+          }
+        }
+
+        if (parsed && Array.isArray(parsed.suggestions) && parsed.suggestions.length > 0) {
+          return res.json({
+            success: true,
+            suggestions: parsed.suggestions.slice(0, 3),
+            modelUsed: modelName,
+          });
+        }
+      } catch (err: any) {
+        console.warn(`[Gemini Smart Suggest issue on ${modelName}]:`, err?.message || err);
+      }
+    }
+  }
+
+  // Smart fallback options if Gemini is unavailable
+  const fallbackSuggestions = [
+    `שלום ${contactName}, קיבלנו את פנייתך. ההזמנה נקלטה במערכת SabanOS ותצא לדרך בהקדם!`,
+    `היי ${contactName}, מחירון סומסום וחומרי בניין מעודכן נשלח אליך. אשמח לאשר עבורך את מועד המשלוח.`,
+    `שלום! הנהג בדרכו אליכם עם ציוד הפריקה, נעדכן אתכם כשהוא מתקרב לאתר.`,
+  ];
+
+  res.json({
+    success: true,
+    suggestions: fallbackSuggestions,
+    source: "smart_fallback",
+  });
+});
+
+app.get("/api/script/code-js", (req, res) => {
+  try {
+    const fs = require("fs");
+    const codePath = path.join(process.cwd(), "Code.js");
+    const codeText = fs.readFileSync(codePath, "utf-8");
+    res.json({ success: true, code: codeText });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err?.message || "Failed to read Code.js" });
+  }
+});
+
+// Helper function to verify customer orders against Logistic Dictionary (מילון_לוגיסטי)
+function verifyOrderLocally(userMessage: string, customerName: string = "לקוח"): string | null {
+  const lines = userMessage
+    .split(/[\n,;+]| וגם | ועוד |\t/)
+    .map((l) => l.trim())
+    .filter((l) => l.length > 1);
+
+  const verifiedItems: any[] = [];
+  const ambiguousItems: any[] = [];
+  const unmatchedItems: any[] = [];
+
+  const HEBREW_NUMS: Record<string, number> = {
+    אחד: 1, אחת: 1, שניים: 2, שתי: 2, שני: 2, שלושה: 3, שלוש: 3, ארבעה: 4, ארבע: 4, חמישה: 5, חמש: 5,
+    שישה: 6, שש: 6, שבעה: 7, שבע: 7, שמונה: 8, תשעה: 9, תשע: 9, עשרה: 10, עשר: 10, עשרים: 20, שלושים: 30, חמישים: 50
+  };
+
+  const FILLERS = ["רוצה", "צריך", "תביא", "תוסיף", "משלוח של", "הזמנה של", "בבקשה", "למחר", "היום", "עבור", "אתר"];
+
+  for (const line of lines) {
+    let quantity = 1;
+    let textWithoutQty = line;
+
+    const numMatch = line.match(/(?:^|\s)(\d+)(?:\s*x|\s*שקים|\s*בלות|\s*משטחים|\s*יח|\s*יחידות|\s*מ"ר)?(?:\s+|$)/i);
+    if (numMatch) {
+      quantity = parseInt(numMatch[1], 10);
+      textWithoutQty = line.replace(numMatch[0], " ").trim();
+    } else {
+      for (const w of line.split(/\s+/)) {
+        const cleanW = w.replace(/^[ובל-]/, "");
+        if (HEBREW_NUMS[cleanW]) {
+          quantity = HEBREW_NUMS[cleanW];
+          textWithoutQty = line.replace(w, " ").trim();
+          break;
+        }
+      }
+    }
+
+    let targetTerm = textWithoutQty.toLowerCase();
+    for (const f of FILLERS) {
+      targetTerm = targetTerm.replace(new RegExp(`\\b${f}\\b`, "gi"), " ").trim();
+    }
+    targetTerm = targetTerm.replace(/\s+/g, " ").trim();
+
+    if (!targetTerm || targetTerm.length < 2) continue;
+
+    const matches: { prod: any; score: number }[] = [];
+
+    for (const prod of logisticDictionary) {
+      let maxScore = 0;
+      for (const alias of prod.aliases) {
+        const lowerAlias = alias.toLowerCase();
+        if (targetTerm === lowerAlias) maxScore = Math.max(maxScore, 100);
+        else if (targetTerm.includes(lowerAlias)) maxScore = Math.max(maxScore, 85);
+        else if (lowerAlias.includes(targetTerm) && targetTerm.length >= 3) maxScore = Math.max(maxScore, 75);
+      }
+
+      const lowerProdName = prod.productName.toLowerCase();
+      if (targetTerm === lowerProdName) maxScore = Math.max(maxScore, 100);
+      else if (targetTerm.includes(lowerProdName)) maxScore = Math.max(maxScore, 85);
+      else if (lowerProdName.includes(targetTerm) && targetTerm.length >= 3) maxScore = Math.max(maxScore, 75);
+
+      const termWords = targetTerm.split(/\s+/).filter((w) => w.length > 2);
+      for (const tw of termWords) {
+        if (prod.aliases.some((a: string) => a.toLowerCase().includes(tw)) || lowerProdName.includes(tw)) {
+          maxScore = Math.max(maxScore, 60);
+        }
+      }
+
+      if (maxScore >= 50) {
+        matches.push({ prod, score: maxScore });
+      }
+    }
+
+    matches.sort((a, b) => b.score - a.score);
+
+    if (matches.length === 0) {
+      if (/(מלט|סומסום|חול|טיט|איטונג|בלוק|גבס|פנל|טיח|חצץ)/i.test(line)) {
+        unmatchedItems.push({ name: textWithoutQty || line, quantity });
+      }
+    } else if (matches.length === 1 || matches[0].score >= 90 || (matches[0].score - (matches[1]?.score || 0) >= 30)) {
+      const p = matches[0].prod;
+      verifiedItems.push({
+        sku: p.sku,
+        productName: p.productName,
+        quantity,
+        unit: p.unit,
+        unitPrice: p.price || 0,
+        totalPrice: (p.price || 0) * quantity,
+      });
+    } else {
+      ambiguousItems.push({
+        requestedName: textWithoutQty || line,
+        quantity,
+        matchingProducts: matches.map((m) => m.prod),
+      });
+    }
+  }
+
+  const hasOrderItems = verifiedItems.length > 0 || ambiguousItems.length > 0 || unmatchedItems.length > 0;
+
+  if (!hasOrderItems) return null;
+
+  let text = `שלום ${customerName}! קיבלנו את פנייתך ב-SabanOS. 📦\n\n`;
+  text += `אימתנו את המוצרים המבוקשים מול גליון *מילון_לוגיסטי*:\n\n`;
+
+  if (verifiedItems.length > 0) {
+    text += `✅ *מוצרים שאומתו במילון הלוגיסטי:*\n`;
+    verifiedItems.forEach((i) => {
+      const priceStr = i.totalPrice ? ` (₪${i.unitPrice} ל-${i.unit}, סה"כ: ₪${i.totalPrice})` : "";
+      text += ` • ${i.quantity} ${i.unit} *[מק"ט ${i.sku}] ${i.productName}*${priceStr}\n`;
+    });
+    text += `\n`;
+  }
+
+  if (ambiguousItems.length > 0) {
+    text += `❓ *אימות מק"ט ושם מוצר נדרש:* (נמצאו מספר מוצרים תואמים במילון)\n`;
+    ambiguousItems.forEach((amb) => {
+      text += `לגבי *${amb.requestedName}* (${amb.quantity} יחידות) - האם התכוונת ל:\n`;
+      amb.matchingProducts.forEach((p: any, idx: number) => {
+        text += `   ${idx + 1}. *[מק"ט ${p.sku}] ${p.productName}* (${p.price ? `₪${p.price} ל-${p.unit}` : p.unit})\n`;
+      });
+    });
+    text += `\nאנא בחר את המק"ט והמוצר המדויק מתוך המילון!\n\n`;
+  }
+
+  if (unmatchedItems.length > 0) {
+    text += `⚠️ *מוצרים לבדיקת מחסן:* ${unmatchedItems.map((u) => `${u.quantity}x ${u.name}`).join(", ")}\n\n`;
+  }
+
+  if (ambiguousItems.length === 0) {
+    const total = verifiedItems.reduce((acc, i) => acc + i.totalPrice, 0);
+    if (total > 0) text += `💰 *סה"כ משוער לחיוב:* ₪${total}\n\n`;
+    text += `ההזמנה המאומתת הועברה לצוות הלוגיסטיקה לטיפול מיידי! 🚛 🏗️`;
+  } else {
+    text += `לאחר אישורך על המק"ט המדויק, נעביר את ההזמנה המאומתת לצוות הלוגיסטיקה! 🚛`;
+  }
+
+  return text;
+}
+
+// AI Chat Respond API Route
+app.post("/api/chat/respond", async (req, res) => {
+  try {
+    const body = req.body || {};
+
+    const phone = body.phone || body.from || body.chatId || "050-0000000";
+    const userMessage = body.message || body.userMessage || body.prompt || body.text || "";
+    const timestamp = body.timestamp || new Date().toISOString();
+
+    const chatId = body.chatId || body.id || phone || "default";
+    const contactName = body.contactName || body.sender || body.name || "לקוח";
+    const conversationHistory = Array.isArray(body.conversationHistory)
+      ? body.conversationHistory
+      : Array.isArray(body.history)
+      ? body.history
+      : Array.isArray(body.messages)
+      ? body.messages
+      : [];
+    const systemPrompt = body.systemPrompt || body.context || body.systemInstruction || serverSettings.systemPrompt;
+    const knowledgeBase = Array.isArray(body.knowledgeBase) ? body.knowledgeBase : [];
+    const customerProfile = body.customerProfile || null;
+    const orderHistory = Array.isArray(body.orderHistory) ? body.orderHistory : [];
+
+    // Check Gemini API key configuration
+    const apiKey = process.env.GEMINI_API_KEY;
+    if (!apiKey) {
+      console.warn("[/api/chat/respond] GEMINI_API_KEY is missing or empty in environment. Falling back to local smart engine.");
+    }
+
+    const ai = getGeminiClient();
+
+    // Trigger Google Apps Script Web App sync in background if enabled
+    if (serverSettings.webhookSyncEnabled && serverSettings.webAppUrl) {
+      fetch(serverSettings.webAppUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "incoming_message",
+          chatId,
+          phone,
+          sender: contactName,
+          message: userMessage,
+          timestamp,
+        }),
+      }).catch((err) => console.log("Google Apps Script sync background warning:", err?.message));
+    }
+
+    // Check if message contains order items to verify against Logistic Dictionary (מילון_לוגיסטי)
+    const orderVerificationText = verifyOrderLocally(userMessage, contactName);
+
+    // Format Knowledge Base text for AI context
+    const kbContext = Array.isArray(knowledgeBase) && knowledgeBase.length > 0
+      ? `\n\nמאגר מידע ועובדות עסקיות (SabanOS KB):\n` +
+        knowledgeBase
+          .filter((k: any) => k && k.isEnabled !== false)
+          .map((k: any) => `[${k.category || "כללי"}] ${k.title || ""}: ${k.content || ""}`)
+          .join("\n")
+      : "";
+
+    const dictionaryContext = Array.isArray(logisticDictionary) && logisticDictionary.length > 0
+      ? `\n\nגליון 'מילון_לוגיסטי' ומק"טים רשמיים של SabanOS (עובדות בלבד!):\n` +
+        logisticDictionary
+          .map((p) => `- מק"ט: ${p.sku} | שם מוצר תקני: "${p.productName}" | יחידה: ${p.unit} | מחיר: ₪${p.price} | כינויים: [${(p.aliases || []).join(", ")}]`)
+          .join("\n")
+      : "";
+
+    // Format Customer CRM profile & Order History context
+    const crmContext = customerProfile
+      ? `\n\nתיק לקוח CRM מיועד (${contactName}):\n` +
+        `- טלפון: ${customerProfile.phone || phone || "לא צוין"}\n` +
+        `- חברה/עסק: ${customerProfile.company || "פרטי"}\n` +
+        `- כתובת/אתר: ${customerProfile.address || "לא צוינה"}\n` +
+        `- מסגרת אשראי/חוב: ${customerProfile.creditLimit ? `₪${customerProfile.creditLimit}` : "תקין"}\n` +
+        `- הערות מנהל: ${customerProfile.notes || "אין הערות"}`
+      : "";
+
+    const historyContext = Array.isArray(orderHistory) && orderHistory.length > 0
+      ? `\n\nהיסטוריית הזמנות קודמות של הלקוח (${contactName}):\n` +
+        orderHistory
+          .slice(-10)
+          .map((o: any) => `- הזמנה #${o.id || "ORD"} [תאריך ${o.date || "לאחרונה"}]: ${o.items || o.skuDetails || "פריטים"} (סה"כ: ₪${o.total || 0}, סטאטוס: ${o.status || "בטיפול"})`)
+          .join("\n")
+      : "";
+
+    const fullSystemInstruction = `${systemPrompt}
+
+${crmContext}
+
+${historyContext}
+
+${dictionaryContext}
+
+${kbContext}
+
+אתה משיב כעת בצ'אט וואטסאפ ללקוח בשם: "${contactName}" (טלפון: ${phone}).
+הוראות חובה וקריטיות לשירות נועה AI:
+1. חוק הפרופורציונליות (קריטי!): התאם את אורך התגובה ישירות להודעה הנכנסת. אם הלקוח שולח ברכה פשוטה ("היי", "שלום", "בוקר טוב", "מה נשמע"), ענה בברכה אנושית קצרה וחמה בלבד (1-2 משפטים). אל תפרט היסטוריית הזמנות, אל תציג סיכומי עבר ואל תציג רשימות מוצרים אלא אם הלקוח שאל/ביקש זאת במפורש!
+2. טון דיבור קולגיאלי ואנושי: דבר כקולגה חדה, יציבה ועוזרת ב'ח. סבן'. הימנע לחלוטין מתשובות רובוטיות, תבניות קבועות, חתימות אוטומטיות, או ניסוחים נפוחים.
+3. פשטות בעברית יומיומית: שמור על תשובות נקיות, קצרות וענייניות בעברית פשוטה וטבעית (1-2 משפטים לפנייה ראשונית).
+4. בהזמנת מוצרים מפורשת: בצע אימות מלא מול "מילון_לוגיסטי", ציין מק"ט תקני במידת הצורך, ואם השם עמום ברר מול הלקוח בבירור קצר וענייני.`;
+
+    if (ai) {
+      const candidateModels = Array.from(
+        new Set([
+          serverSettings.activeModel || "gemini-3.6-flash",
+          "gemini-2.5-flash",
+          "gemini-flash-latest",
+          "gemini-3.1-flash-lite",
+        ])
+      );
+
+      // Build conversation turns for Gemini safely
+      const contents: any[] = [];
+      if (Array.isArray(conversationHistory)) {
+        conversationHistory.slice(-10).forEach((msg: any) => {
+          if (!msg) return;
+          const txt = (msg.text || msg.content || "").toString().trim();
+          if (txt) {
+            contents.push({
+              role: (msg.sender === "user" || msg.role === "user") ? "user" : "model",
+              parts: [{ text: txt }],
+            });
+          }
+        });
+      }
+
+      const cleanUserMsg = (userMessage || "").toString().trim() || "שלום";
+      if (contents.length === 0 || contents[contents.length - 1].role !== "user") {
+        contents.push({
+          role: "user",
+          parts: [{ text: cleanUserMsg }],
+        });
+      }
+
+      for (const modelName of candidateModels) {
+        try {
+          const response = await ai.models.generateContent({
+            model: modelName,
+            contents: contents,
+            config: {
+              systemInstruction: fullSystemInstruction,
+              temperature: 0.6,
+            },
+          });
+
+          let replyText = response.text || "הודעתך התקבלה והועברה לצוות";
+
+          // If this is an order message and Gemini didn't include SKUs [מק"ט], enforce local verification summary
+          if (orderVerificationText && (!replyText.includes("מק\"ט") && !replyText.includes("מילון"))) {
+            replyText = orderVerificationText;
+          }
+
+          return res.json({
+            success: true,
+            text: replyText,
+            phone,
+            message: userMessage,
+            source: "gemini",
+            modelUsed: modelName,
+            timestamp: new Date().toISOString(),
+          });
+        } catch (err: any) {
+          const isQuotaError =
+            err?.status === 429 ||
+            err?.message?.includes("429") ||
+            err?.message?.includes("quota") ||
+            err?.message?.includes("RESOURCE_EXHAUSTED");
+
+          if (isQuotaError) {
+            console.warn(`[Gemini Quota Exceeded on ${modelName}] Trying next model or local engine...`);
+          } else {
+            console.warn(`[Gemini Call Issue on ${modelName}]:`, err?.message || err);
+          }
+        }
+      }
+    }
+
+    // Smart Intelligent Local Fallback Response based on Knowledge Base & keywords
+    if (orderVerificationText) {
+      return res.json({
+        success: true,
+        text: orderVerificationText,
+        phone,
+        message: userMessage,
+        source: "logistic_dictionary_verifier",
+        timestamp: new Date().toISOString(),
+      });
+    }
+
+    const lowerMsg = (userMessage || "").toString().toLowerCase();
+    let replyText = "";
+
+    // 1. Try Knowledge Base direct match
+    if (Array.isArray(knowledgeBase) && knowledgeBase.length > 0) {
+      const activeKb = knowledgeBase.filter((k: any) => k && k.isEnabled !== false);
+      const matchedKb = activeKb.find((k: any) => {
+        const titleMatch = k.title && lowerMsg.includes(k.title.toLowerCase());
+        const categoryMatch = k.category && lowerMsg.includes(k.category.toLowerCase());
+        return titleMatch || categoryMatch;
+      });
+
+      if (matchedKb) {
+        replyText = `מידע ממאגר SabanOS בנושא *${matchedKb.title}*:\n${matchedKb.content}`;
+      }
+    }
+
+    // 2. Keyword based fallback
+    if (!replyText) {
+      if (lowerMsg.includes("תפריט") || lowerMsg.includes("אוכל") || lowerMsg.includes("מנה")) {
+        replyText = "בוודאי! התפריט היומי שלנו מעודכן בסינכרון מול SabanOS. תוכל לבחור בין מנות ראשונות, עיקריות וקינוחים. תרצה שאשלח לך את מחירון המנות?";
+      } else if (lowerMsg.includes("שעות") || lowerMsg.includes("מתי פתוח") || lowerMsg.includes("זמנים")) {
+        replyText = "אנחנו פתוחים בימים א'-ה' בין השעות 08:00 ל-18:00, ובימי שישי עד 13:00. נשמח לראותכם!";
+      } else if (lowerMsg.includes("הזמנה") || lowerMsg.includes("משלוח") || lowerMsg.includes("ציוד")) {
+        replyText = "שלום! *ההזמנה שלך נקלטה במערכת SabanOS* 🚛\nצוות הלוגיסטיקה מכין את המשלוח ויוצר קשר לתיאום סופי.";
+      } else if (lowerMsg.includes("מיקום") || lowerMsg.includes("כתובת") || lowerMsg.includes("ניווט") || lowerMsg.includes("waze")) {
+        replyText = "📍 הסניף המרכזי שלנו ממוקם ב*רחוב הברזל 11, תל אביב*. לחץ לניווט ב-Waze: https://waze.com/ul?ll=32.1092,34.8389&navigate=yes 🗺️";
+      } else if (lowerMsg.includes("מחיר") || lowerMsg.includes("עלות") || lowerMsg.includes("כמה עולה")) {
+        replyText = "המחירון המלא מעודכן במערכת SabanOS. תרצה לקבל פירוט והצעת מחיר מותאמת אישית?";
+      } else {
+        replyText = "הודעתך התקבלה והועברה לצוות";
+      }
+    }
+
+    return res.json({
+      success: true,
+      text: replyText,
+      phone,
+      message: userMessage,
+      source: "smart_fallback",
+      timestamp: new Date().toISOString(),
+    });
+  } catch (error: any) {
+    console.error("Unhandled exception in /api/chat/respond:", error?.stack || error?.message || error);
+    return res.status(200).json({
+      success: true,
+      text: "הודעתך התקבלה והועברה לצוות",
+      source: "error_fallback",
+      errorDetails: error?.message || "Internal Server Error",
+      timestamp: new Date().toISOString(),
+    });
+  }
+});
+
+async function startServer() {
+  if (process.env.NODE_ENV !== "production" && !process.env.VERCEL) {
+    const { createServer: createViteServer } = await import("vite");
+    const vite = await createViteServer({
+      server: { middlewareMode: true },
+      appType: "spa",
+    });
+    app.use(vite.middlewares);
+  } else if (!process.env.VERCEL) {
+    const distPath = path.join(process.cwd(), "dist");
+    app.use(express.static(distPath));
+    app.get("*", (req, res) => {
+      res.sendFile(path.join(distPath, "index.html"));
+    });
+  }
+
+  app.listen(PORT, "0.0.0.0", () => {
+    console.log(`SabanOS Noa AI WhatsApp server listening on http://0.0.0.0:${PORT}`);
+  });
+}
+
+export default app;
+
+if (!process.env.VERCEL) {
+  startServer();
+}

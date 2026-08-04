@@ -33,6 +33,12 @@ export interface CustomerOrderRecord {
   skuDetails?: string;
 }
 
+export interface ContactTag {
+  id: string;
+  name: string;
+  color: 'amber' | 'emerald' | 'rose' | 'indigo' | 'cyan' | 'purple' | 'blue' | 'slate' | 'orange' | 'pink';
+}
+
 export interface Contact {
   id: string;
   name: string;
@@ -51,6 +57,7 @@ export interface Contact {
   isAiManaged: boolean;
   unreadCount: number;
   labels?: string[];
+  tags?: ContactTag[];
   notes?: string;
   orderHistory?: CustomerOrderRecord[];
   blueTicksOverride?: 'global' | 'enabled' | 'disabled';
@@ -150,6 +157,38 @@ export interface StagedOrder {
   address?: string;
   sentToWhatsapp: boolean;
   createdAt: string;
+}
+
+export interface CustomerProfile {
+  phone: string;
+  name: string;
+  accountNumber?: string; // מזהה לקוח ח.סבן
+  email?: string;
+  siteAddresses?: string[]; // כתובות אספקה
+  siteManager?: string; // מנהל אתר / קבלן
+  customerGroup?: string; // קבוצת לקוחות ח.סבן
+  mode?: 'auto' | 'manual';
+  tags?: string[];
+  notes?: string;
+  lastUpdated?: string;
+}
+
+export interface SheetRecord {
+  orderId: string;
+  date: string;
+  items: string;
+  address: string;
+  status: string;
+  driverName?: string;
+  totalAmount?: string;
+}
+
+export interface NoaCommandLog {
+  id: string;
+  command: string;
+  response: string;
+  timestamp: string;
+  status: 'executed' | 'error' | 'pending';
 }
 
 export interface ListenerEventPayload {

@@ -1,6 +1,7 @@
 import React from 'react';
 import { Phone, Video, Search, MoreVertical, ArrowRight, Bot, ShieldAlert } from 'lucide-react';
 import { Contact } from '../../types';
+import { getContactTags, getTagColorConfig } from '../../utils/tagUtils';
 
 interface ChatHeaderProps {
   contact: Contact;
@@ -19,6 +20,8 @@ export const ChatHeader: React.FC<ChatHeaderProps> = ({
   onToggleAi,
   darkTheme,
 }) => {
+  const activeTags = getContactTags(contact);
+
   return (
     <div className={`h-[60px] px-4 flex items-center justify-between border-b select-none z-10 ${
       darkTheme ? 'bg-[#202c33] border-[#222d34]' : 'bg-[#f0f2f5] border-[#e9edef]'
@@ -53,11 +56,23 @@ export const ChatHeader: React.FC<ChatHeaderProps> = ({
           }`}>
             <span>{contact.name}</span>
             {contact.isAiManaged && (
-              <span className="bg-[#00a884]/20 text-[#00a884] text-[10px] font-bold px-1.5 py-0.5 rounded-full flex items-center gap-1">
+              <span className="bg-[#00a884]/20 text-[#00a884] text-[10px] font-bold px-1.5 py-0.5 rounded-full flex items-center gap-1 shrink-0">
                 <Bot className="w-3 h-3" />
                 Noa AI
               </span>
             )}
+            {activeTags.map((t) => {
+              const cfg = getTagColorConfig(t.color || t.name);
+              return (
+                <span
+                  key={t.id || t.name}
+                  className={`hidden sm:inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full border shrink-0 ${cfg.badgeClass}`}
+                >
+                  <span className={`w-1.5 h-1.5 rounded-full ${cfg.dotClass}`} />
+                  <span>{t.name}</span>
+                </span>
+              );
+            })}
           </h2>
           <p className="text-xs text-[#8696a0] truncate mt-0.5">
             {isTyping ? (

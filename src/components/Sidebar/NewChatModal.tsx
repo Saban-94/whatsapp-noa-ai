@@ -1,5 +1,7 @@
 import React, { useState } from 'react';
-import { X, UserPlus, Phone, Bot, MapPin, FileText, ShoppingCart, Building } from 'lucide-react';
+import { X, UserPlus, Phone, Bot, MapPin, FileText, ShoppingCart, Building, Tag, Check } from 'lucide-react';
+import { ContactTag } from '../../types';
+import { PRESET_TAGS, getTagColorConfig } from '../../utils/tagUtils';
 
 interface NewChatModalProps {
   isOpen: boolean;
@@ -13,6 +15,7 @@ interface NewChatModalProps {
       address?: string;
       notes?: string;
       initialOrderSummary?: string;
+      tags?: ContactTag[];
     }
   ) => void;
 }
@@ -29,8 +32,19 @@ export const NewChatModal: React.FC<NewChatModalProps> = ({
   const [notes, setNotes] = useState('');
   const [initialOrderSummary, setInitialOrderSummary] = useState('');
   const [isAiManaged, setIsAiManaged] = useState(true);
+  const [selectedTags, setSelectedTags] = useState<ContactTag[]>([
+    { id: 'tag_preset_new_lead', name: 'New Lead', color: 'emerald' },
+  ]);
 
   if (!isOpen) return null;
+
+  const toggleTag = (preset: ContactTag) => {
+    if (selectedTags.some((t) => t.name.toLowerCase() === preset.name.toLowerCase())) {
+      setSelectedTags(selectedTags.filter((t) => t.name.toLowerCase() !== preset.name.toLowerCase()));
+    } else {
+      setSelectedTags([...selectedTags, preset]);
+    }
+  };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -40,6 +54,7 @@ export const NewChatModal: React.FC<NewChatModalProps> = ({
       address,
       notes,
       initialOrderSummary,
+      tags: selectedTags,
     });
     setName('');
     setPhone('');
@@ -47,6 +62,7 @@ export const NewChatModal: React.FC<NewChatModalProps> = ({
     setAddress('');
     setNotes('');
     setInitialOrderSummary('');
+    setSelectedTags([{ id: 'tag_preset_new_lead', name: 'New Lead', color: 'emerald' }]);
     onClose();
   };
 
@@ -141,6 +157,36 @@ export const NewChatModal: React.FC<NewChatModalProps> = ({
               placeholder="לדוגמה: 50 שק מלט אפור [10001], 10 בלה סומסום [20001]"
               className="w-full bg-[#111b21] border border-[#2a3942] rounded-lg px-3 py-2 text-sm text-[#e9edef] focus:outline-none focus:border-[#00a884]"
             />
+          </div>
+
+          <div>
+            <label className="block text-xs font-medium text-[#8696a0] mb-1.5 flex items-center gap-1">
+              <Tag className="w-3.5 h-3.5 text-[#00a884]" />
+              תגיות וסיווג ראשוני (VIP, New Lead, Urgent...)
+            </label>
+            <div className="flex flex-wrap gap-1.5 bg-[#111b21] p-2.5 rounded-lg border border-[#2a3942]">
+              {PRESET_TAGS.map((preset) => {
+                const isSelected = selectedTags.some(
+                  (t) => t.name.toLowerCase() === preset.name.toLowerCase()
+                );
+                const colorCfg = getTagColorConfig(preset.color);
+                return (
+                  <button
+                    key={preset.id}
+                    type="button"
+                    onClick={() => toggleTag(preset)}
+                    className={`text-xs px-2.5 py-1 rounded-md border flex items-center gap-1.5 transition-all cursor-pointer ${
+                      isSelected
+                        ? `${colorCfg.badgeClass} ring-1 ring-white/20 font-bold scale-105`
+                        : 'bg-[#182229] border-[#2a3942] text-[#8696a0] hover:text-[#e9edef]'
+                    }`}
+                  >
+                    {isSelected ? <Check className="w-3 h-3" /> : <span className={`w-2 h-2 rounded-full ${colorCfg.dotClass}`} />}
+                    <span>{preset.name}</span>
+                  </button>
+                );
+              })}
+            </div>
           </div>
 
           <div>

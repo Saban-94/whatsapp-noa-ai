@@ -10,7 +10,7 @@ import {
   saveStoredLogs,
   resetAllData,
 } from './utils/storage';
-import { Chat, KnowledgeItem, AdminSettings, WebhookLog, ChatFilter, Message, StagedOrder } from './types';
+import { Chat, KnowledgeItem, AdminSettings, WebhookLog, ChatFilter, Message, StagedOrder, ContactTag } from './types';
 import { INITIAL_MOCK_STAGED_ORDERS } from './components/Admin/OrdersStagingTab';
 import { SidebarHeader } from './components/Sidebar/SidebarHeader';
 import { SearchBar } from './components/Sidebar/SearchBar';
@@ -24,6 +24,7 @@ import { AdminModal } from './components/Admin/AdminModal';
 import { SplashGateway } from './components/SplashGateway';
 import { PWAInstallPrompt } from './components/PWAInstallPrompt';
 import { MobileBottomNav } from './components/MobileBottomNav';
+import { WhatsAppMirror } from './pages/WhatsAppMirror';
 import { playWhatsAppIncomingSound, playWhatsAppOutgoingSound } from './utils/audio';
 import { sendNotification, playNotificationSound } from './utils/notificationService';
 
@@ -37,6 +38,7 @@ export default function App() {
   const [activeChatId, setActiveChatId] = useState<string>(chats[0]?.id || 'chat_noa_ai');
   const [searchQuery, setSearchQuery] = useState('');
   const [activeFilter, setActiveFilter] = useState<ChatFilter>('all');
+  const [activeMainTab, setActiveMainTab] = useState<'chat' | 'whatsapp-mirror'>('chat');
   const [mobileTab, setMobileTab] = useState<'chats' | 'orders' | 'logistics' | 'admin'>('chats');
   
   const [isAdminOpen, setIsAdminOpen] = useState(false);
@@ -335,6 +337,25 @@ export default function App() {
     );
   };
 
+  // Update Contact Color-Coded CRM Tags
+  const handleUpdateContactTags = (tags: ContactTag[]) => {
+    if (!activeChat) return;
+    setChats((prev) =>
+      prev.map((c) =>
+        c.id === activeChat.id
+          ? {
+              ...c,
+              contact: {
+                ...c.contact,
+                tags,
+                labels: tags.map((t) => t.name),
+              },
+            }
+          : c
+      )
+    );
+  };
+
   // Create new chat with CRM context & initial order history association
   const handleCreateChat = (
     name: string,
@@ -345,6 +366,7 @@ export default function App() {
       address?: string;
       notes?: string;
       initialOrderSummary?: string;
+      tags?: ContactTag[];
     }
   ) => {
     const newChatId = `chat_${Date.now()}`;
@@ -362,6 +384,10 @@ export default function App() {
         ]
       : [];
 
+    const initialTags = extraDetails?.tags || [
+      { id: 'tag_new', name: 'New Lead', color: 'emerald' },
+    ];
+
     const newChat: Chat = {
       id: newChatId,
       updatedAt: new Date().toISOString(),
@@ -377,6 +403,8 @@ export default function App() {
         isAiManaged,
         unreadCount: 0,
         orderHistory,
+        tags: initialTags,
+        labels: initialTags.map((t) => t.name),
       },
       messages: [
         {
@@ -865,12 +893,14 @@ export default function App() {
 
           {/* SIDEBAR (Contacts & Chats) */}
           <div className={`w-full md:w-[380px] lg:w-[420px] flex flex-col border-l border-[#222d34] bg-[#111b21] shrink-0 ${
-            mobileShowChat ? 'hidden md:flex' : 'flex'
+            mobileShowChat || activeMainTab === 'whatsapp-mirror' ? 'hidden md:flex' : 'flex'
           }`}>
             <SidebarHeader
               onOpenAdmin={() => setIsAdminOpen(true)}
               onOpenNewChat={() => setIsNewChatOpen(true)}
               onOpenGateway={() => setIsGatewayOpen(true)}
+              onOpenWhatsAppMirror={() => setActiveMainTab((prev) => (prev === 'whatsapp-mirror' ? 'chat' : 'whatsapp-mirror'))}
+              isMirrorActive={activeMainTab === 'whatsapp-mirror'}
               darkTheme={settings.darkTheme}
             />
             <SearchBar
@@ -883,15 +913,22 @@ export default function App() {
             <ChatList
               chats={filteredChats}
               activeChatId={activeChatId}
-              onSelectChat={handleSelectChat}
+              onSelectChat={(id) => {
+                setActiveMainTab('chat');
+                handleSelectChat(id);
+              }}
               darkTheme={settings.darkTheme}
               enableBlueTicks={settings.enableBlueTicks}
               activeFilter={activeFilter}
             />
           </div>
 
-          {/* MAIN CHAT AREA */}
-          {activeChat ? (
+          {/* MAIN VIEW AREA: WHATSAPP MIRROR OR STANDARD CHAT */}
+          {activeMainTab === 'whatsapp-mirror' ? (
+            <div className="flex-1 flex flex-col min-w-0 bg-[#0b141a] relative h-full">
+              <WhatsAppMirror darkTheme={settings.darkTheme} />
+            </div>
+          ) : activeChat ? (
             <div className={`flex-1 flex flex-col min-w-0 bg-[#0b141a] relative ${
               !mobileShowChat ? 'hidden md:flex' : 'flex'
             }`}>
@@ -938,6 +975,7 @@ export default function App() {
                   onTogglePin={handleTogglePinContact}
                   onToggleArchive={handleToggleArchiveContact}
                   onUpdateContactBlueTicks={handleUpdateContactBlueTicks}
+                  onUpdateContactTags={handleUpdateContactTags}
                   globalBlueTicks={settings.enableBlueTicks}
                   darkTheme={settings.darkTheme}
                 />

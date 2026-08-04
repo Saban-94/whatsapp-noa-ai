@@ -1,6 +1,7 @@
 import React from 'react';
 import { Pin, Check, CheckCheck, Bot, Archive } from 'lucide-react';
 import { Chat } from '../../types';
+import { getContactTags, getTagColorConfig } from '../../utils/tagUtils';
 
 interface ChatListProps {
   chats: Chat[];
@@ -39,6 +40,7 @@ export const ChatList: React.FC<ChatListProps> = ({
         const isActive = chat.id === activeChatId;
         const lastMsg = chat.messages[chat.messages.length - 1];
         const contact = chat.contact;
+        const contactTags = getContactTags(contact);
         const isBlueTicksForChat =
           contact.blueTicksOverride === 'enabled'
             ? true
@@ -75,12 +77,25 @@ export const ChatList: React.FC<ChatListProps> = ({
 
             {/* Chat Content Info */}
             <div className="flex-1 min-w-0">
-              <div className="flex items-center justify-between mb-1">
-                <h3 className={`text-sm font-semibold truncate ${
-                  darkTheme ? 'text-[#e9edef]' : 'text-[#111b21]'
-                }`}>
-                  {contact.name}
-                </h3>
+              <div className="flex items-center justify-between mb-0.5">
+                <div className="flex items-center gap-1.5 min-w-0">
+                  <h3 className={`text-sm font-semibold truncate ${
+                    darkTheme ? 'text-[#e9edef]' : 'text-[#111b21]'
+                  }`}>
+                    {contact.name}
+                  </h3>
+                  {contactTags.slice(0, 2).map((t) => {
+                    const cfg = getTagColorConfig(t.color || t.name);
+                    return (
+                      <span
+                        key={t.id || t.name}
+                        className={`text-[9px] font-bold px-1.5 py-0.2 rounded border shrink-0 ${cfg.badgeClass}`}
+                      >
+                        {t.name}
+                      </span>
+                    );
+                  })}
+                </div>
                 <span className={`text-[11px] shrink-0 ${
                   contact.unreadCount > 0 ? 'text-[#00a884] font-medium' : 'text-[#8696a0]'
                 }`}>

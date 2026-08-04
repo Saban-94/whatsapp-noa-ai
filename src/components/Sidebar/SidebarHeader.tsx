@@ -1,10 +1,12 @@
 import React, { useState } from 'react';
-import { MessageSquarePlus, MoreVertical, CircleDashed, Shield, UserPlus, DoorOpen } from 'lucide-react';
+import { MessageSquarePlus, MoreVertical, CircleDashed, Shield, UserPlus, DoorOpen, Radio } from 'lucide-react';
 
 interface SidebarHeaderProps {
   onOpenAdmin: () => void;
   onOpenNewChat: () => void;
   onOpenGateway?: () => void;
+  onOpenWhatsAppMirror?: () => void;
+  isMirrorActive?: boolean;
   darkTheme: boolean;
 }
 
@@ -12,6 +14,8 @@ export const SidebarHeader: React.FC<SidebarHeaderProps> = ({
   onOpenAdmin,
   onOpenNewChat,
   onOpenGateway,
+  onOpenWhatsAppMirror,
+  isMirrorActive = false,
   darkTheme,
 }) => {
   const [showMenu, setShowMenu] = useState(false);
@@ -29,90 +33,117 @@ export const SidebarHeader: React.FC<SidebarHeaderProps> = ({
   };
 
   return (
-    <div className={`h-[60px] px-4 flex items-center justify-between select-none ${
+    <div className={`h-[60px] px-3 flex items-center justify-between select-none ${
       darkTheme ? 'bg-[#202c33] border-b border-[#222d34]' : 'bg-[#f0f2f5] border-b border-[#e9edef]'
     }`}>
       {/* Right Side in RTL: User Avatar & SabanOS Badge */}
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-2">
         <div 
           onClick={handleAvatarClick}
-          className="relative cursor-pointer group"
+          className="relative cursor-pointer group shrink-0"
           title="SabanOS User Profile (לחץ 3 פעמים לפתיחת פאנל ניהול)"
         >
           <img
             src="https://i.ibb.co/k2GwyBfh/Gemini-Generated-Image-q7vwpcq7vwpcq7vw.png"
             alt="SabanOS Operator"
-            className="w-10 h-10 rounded-full object-cover ring-2 ring-[#00a884]/40 group-hover:scale-105 transition-transform"
+            className="w-9 h-9 rounded-full object-cover ring-2 ring-[#00a884]/40 group-hover:scale-105 transition-transform"
           />
           <div className="absolute -bottom-1 -right-1 bg-[#00a884] text-[9px] font-bold text-white px-1 rounded-full uppercase">
             AI
           </div>
         </div>
-        <div className="hidden sm:block">
-          <h2 className="text-sm font-semibold text-[#e9edef] leading-tight">SabanOS מנהל</h2>
-          <span className="text-[11px] text-[#8696a0] flex items-center gap-1">
-            <span className="w-2 h-2 rounded-full bg-[#00a884] animate-pulse" />
-            מחובר ל-Noa AI
-          </span>
-        </div>
+
+        {/* WhatsApp Mirror Main Tab Button */}
+        {onOpenWhatsAppMirror && (
+          <button
+            onClick={onOpenWhatsAppMirror}
+            className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer border ${
+              isMirrorActive
+                ? 'bg-[#00a884]/25 text-[#00a884] border-[#00a884] shadow-sm'
+                : 'bg-[#111b21]/80 hover:bg-[#182229] text-[#e9edef] border-[#2a3942]'
+            }`}
+            title="פתיחת לשונית שיקוף וואטסאפ נועה בזמן אמת"
+          >
+            <Radio className="w-3.5 h-3.5 text-[#00a884] animate-pulse" />
+            <span className="hidden sm:inline">שיקוף וואטסאפ</span>
+            <span className="bg-[#00a884] text-[#111b21] text-[9px] font-black px-1.5 py-0.2 rounded-full">
+              🟢 Live
+            </span>
+          </button>
+        )}
       </div>
 
       {/* Action Icons */}
-      <div className="flex items-center gap-1.5 text-[#aebac1]">
+      <div className="flex items-center gap-1 text-[#aebac1]">
         {/* Gateway Splash Door Button */}
         {onOpenGateway && (
           <button
             onClick={onOpenGateway}
-            className="p-2 rounded-full hover:bg-[#374248]/50 transition-colors text-amber-400 hover:text-amber-300 relative group"
+            className="p-1.5 rounded-full hover:bg-[#374248]/50 transition-colors text-amber-400 hover:text-amber-300 relative group"
             title="שער כניסה ואפקט דלתות (Gateway)"
           >
-            <DoorOpen className="w-5 h-5 group-hover:scale-110 transition-transform" />
+            <DoorOpen className="w-4 h-4 group-hover:scale-110 transition-transform" />
           </button>
         )}
 
         {/* Hidden Admin Shortcut Button */}
         <button
           onClick={onOpenAdmin}
-          className="p-2 rounded-full hover:bg-[#374248]/50 transition-colors relative text-[#00a884]"
+          className="p-1.5 rounded-full hover:bg-[#374248]/50 transition-colors relative text-[#00a884]"
           title="פאנל ניהול נסתר (Ctrl+Shift+A)"
         >
-          <Shield className="w-5 h-5" />
+          <Shield className="w-4 h-4" />
           <span className="absolute -top-1 -right-1 w-2 h-2 bg-emerald-400 rounded-full animate-ping" />
         </button>
 
         {/* Status button */}
         <button
           onClick={onOpenAdmin}
-          className="p-2 rounded-full hover:bg-[#374248]/50 transition-colors"
+          className="p-1.5 rounded-full hover:bg-[#374248]/50 transition-colors"
           title="סטטוס מערכת"
         >
-          <CircleDashed className="w-5 h-5" />
+          <CircleDashed className="w-4 h-4" />
         </button>
 
         {/* New Chat button */}
         <button
           onClick={onOpenNewChat}
-          className="p-2 rounded-full hover:bg-[#374248]/50 transition-colors"
+          className="p-1.5 rounded-full hover:bg-[#374248]/50 transition-colors"
           title="צ'אט חדש / איש קשר"
         >
-          <MessageSquarePlus className="w-5 h-5" />
+          <MessageSquarePlus className="w-4 h-4" />
         </button>
 
         {/* More Menu Dropdown */}
         <div className="relative">
           <button
             onClick={() => setShowMenu(!showMenu)}
-            className="p-2 rounded-full hover:bg-[#374248]/50 transition-colors"
+            className="p-1.5 rounded-full hover:bg-[#374248]/50 transition-colors"
             title="אפשרויות נוספות"
           >
-            <MoreVertical className="w-5 h-5" />
+            <MoreVertical className="w-4 h-4" />
           </button>
 
           {showMenu && (
             <div 
-              className="absolute left-0 top-10 w-52 bg-[#233138] rounded-md shadow-xl py-2 z-50 border border-[#2a3942] text-sm text-[#d1d7db]"
+              className="absolute left-0 top-10 w-56 bg-[#233138] rounded-md shadow-xl py-2 z-50 border border-[#2a3942] text-sm text-[#d1d7db]"
               onClick={() => setShowMenu(false)}
             >
+              {onOpenWhatsAppMirror && (
+                <button
+                  onClick={onOpenWhatsAppMirror}
+                  className="w-full text-right px-4 py-2.5 hover:bg-[#182229] flex items-center justify-between text-[#00a884] font-bold"
+                >
+                  <span className="flex items-center gap-1.5">
+                    <Radio className="w-4 h-4 text-[#00a884]" />
+                    שיקוף וואטסאפ נועה
+                  </span>
+                  <span className="text-[10px] bg-[#00a884]/20 text-[#00a884] px-1.5 py-0.5 rounded-full font-mono">
+                    🟢 Live Listener
+                  </span>
+                </button>
+              )}
+              <div className="my-1 border-t border-[#2a3942]" />
               <button
                 onClick={onOpenAdmin}
                 className="w-full text-right px-4 py-2.5 hover:bg-[#182229] flex items-center justify-between text-[#00a884] font-medium"
