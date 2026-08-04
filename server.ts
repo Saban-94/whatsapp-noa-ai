@@ -580,48 +580,118 @@ app.get("/api/chat/respond", (req, res) => {
 app.post("/api/chat/respond", async (req, res) => {
   try {
     const body = req.body || {};
-    const rawPhone = body.phone || body.customerPhone || "0500000000";
-    const phone = rawPhone.replace(/\D/g, "") || rawPhone;
-    const senderName = body.senderName || body.contactName || body.parsedClientName || "לקוח";
-    const incomingMessage = (body.incomingMessage || body.userMessage || body.message || "").trim();
+    const rawPhone =
+      body.phone ||
+      body.senderPhone ||
+      body.customerPhone ||
+      body.from ||
+      body.chatId ||
+      "0500000000";
+    const cleanDigits = rawPhone.replace(/\D/g, "");
+    const phone = cleanDigits || rawPhone;
+    const senderName =
+      body.senderName ||
+      body.contactName ||
+      body.parsedClientName ||
+      body.sender ||
+      body.name ||
+      "לקוח";
+    const incomingMessage = (
+      body.incomingMessage ||
+      body.userMessage ||
+      body.message ||
+      body.prompt ||
+      body.text ||
+      ""
+    )
+      .toString()
+      .trim();
     const isGroup = Boolean(body.isGroup);
     const groupId = body.groupId || null;
     const timestamp = body.timestamp || new Date().toISOString();
     const source = body.source || "local_whatsapp_listener";
-    const msgId = body.id || `evt_res_${Date.now()}`;
+    const msgId =
+      body.id || `evt_res_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
 
     if (!incomingMessage) {
       return res.json({
         success: true,
+        id: msgId,
+        phone,
+        senderName,
         response: null,
+        text: null,
+        timestamp,
         info: "התקבלה הודעה ריקה, לא נוצר מענה",
       });
     }
 
     // Check mode toggle (auto vs manual)
-    const currentMode: "auto" | "manual" = chatModes[phone] || chatModes[rawPhone] || "auto";
+    const currentMode: "auto" | "manual" =
+      chatModes[phone] || chatModes[rawPhone] || "auto";
 
     let aiResponseText = "";
 
     if (currentMode === "manual") {
-      aiResponseText = "[מצב מעקף מנהל ידני פעיל - מענה אוטומטי הושעה. המנהל יענה ישירות בצ'אט]";
+      aiResponseText =
+        "[מצב מעקף מנהל ידני פעיל - מענה אוטומטי הושעה. המנהל יענה ישירות בצ'אט]";
     } else {
-      // Auto Mode: Generate intelligent SabanOS response
-      // Check customer profile and sheet context
-      const profile = customerProfiles[phone] || customerProfiles[rawPhone];
-      const matchedOrders = stagedOrders.filter((o) => o.customerPhone.includes(phone) || phone.includes(o.customerPhone.replace(/\D/g, "")));
-
-      if (/הזמנה|חומרי בניין|צמנט|סומסום|חול|טיט|מנוף|משאית|אספקה/i.test(incomingMessage)) {
-        if (matchedOrders.length > 0) {
-          const lastOrd = matchedOrders[matchedOrders.length - 1];
-          aiResponseText = `שלום ${senderName}! 👋 ראיתי את פנייתך. מצאתי במערכת הזמנה פעילה (${lastOrd.id}) עבור ${lastOrd.address || 'האתר שלך'}. הסטטוס כרגע: ${lastOrd.status || 'בטיפול'}. 🚛`;
-        } else {
-          aiResponseText = `שלום ${senderName}! 👋 קיבלנו את בקשתך לחומרי בניין בח. סבן. הודעתך נקלטה במערכת הסידור הלוגיסטי.`;
+      // 1. Try Gemini API first if configured
+      const aiClient = getGeminiClient();
+      if (aiClient) {
+        try {
+          const modelName = serverSettings.activeModel || "gemini-3.6-flash";
+          const systemInstruction = `${serverSettings.systemPrompt}\n\nאתה מעניק שירות בצ'אט ח. סבן.\nשם לקוח: ${senderName}\nטלפון: ${phone}`;
+          const genRes = await aiClient.models.generateContent({
+            model: modelName,
+            contents: incomingMessage,
+            config: {
+              systemInstruction,
+              temperature: 0.7,
+              maxOutputTokens: 1024,
+            },
+          });
+          if (genRes.text) {
+            aiResponseText = genRes.text.trim();
+          }
+        } catch (geminiErr: any) {
+          console.warn(
+            "[/api/chat/respond] Gemini call failed, falling back to local SabanOS engine:",
+            geminiErr?.message || geminiErr
+          );
         }
-      } else if (/^(היי|שלום|אהלן|בוקר טוב|ערב טוב|מה נשמע)/i.test(incomingMessage)) {
-        aiResponseText = `היי ${senderName}! 👋 במה נועה AI וצוות ח. סבן יכולים לעזור לך היום?`;
-      } else {
-        aiResponseText = `שלום ${senderName}, קיבלנו את הודעתך והיא בטיפול צוות ח. סבן! 🚚`;
+      }
+
+      // 2. Fallback to intelligent local engine if Gemini unavailable or failed
+      if (!aiResponseText) {
+        const matchedOrders = stagedOrders.filter(
+          (o) =>
+            o.customerPhone.includes(phone) ||
+            (cleanDigits && phone.includes(o.customerPhone.replace(/\D/g, "")))
+        );
+
+        if (
+          /הזמנה|חומרי בניין|צמנט|סומסום|חול|טיט|מנוף|משאית|אספקה/i.test(
+            incomingMessage
+          )
+        ) {
+          if (matchedOrders.length > 0) {
+            const lastOrd = matchedOrders[matchedOrders.length - 1];
+            aiResponseText = `שלום ${senderName}! 👋 מצאתי במערכת הזמנה פעילה (${
+              lastOrd.orderNumber || lastOrd.id
+            }) עבור ${
+              lastOrd.customerName || lastOrd.address || "האתר שלך"
+            }. הסטטוס כרגע: ${lastOrd.status || "בטיפול"}. 🚛`;
+          } else {
+            aiResponseText = `שלום ${senderName}! 👋 קיבלנו את בקשתך לחומרי בניין בח. סבן. הודעתך נקלטה במערכת הסידור הלוגיסטי.`;
+          }
+        } else if (
+          /^(היי|שלום|אהלן|בוקר טוב|ערב טוב|מה נשמע)/i.test(incomingMessage)
+        ) {
+          aiResponseText = `היי ${senderName}! 👋 במה נועה AI וצוות ח. סבן יכולים לעזור לך היום?`;
+        } else {
+          aiResponseText = `שלום ${senderName}, קיבלנו את הודעתך והיא בטיפול צוות ח. סבן! 🚚`;
+        }
       }
     }
 
@@ -663,6 +733,8 @@ app.post("/api/chat/respond", async (req, res) => {
       senderName,
       mode: currentMode,
       response: aiResponseText,
+      reply: aiResponseText,
+      text: aiResponseText,
       timestamp,
       info: "Payload captured and processed successfully by /api/chat/respond",
     });
@@ -742,6 +814,109 @@ app.get("/api/chat/sync", (req, res) => {
     serverSettings,
     timestamp: new Date().toISOString(),
   });
+});
+
+// GET & POST /api/chat/generate - Gemini & SabanOS Response Generator Endpoint
+app.get("/api/chat/generate", (req, res) => {
+  res.json({
+    status: "online",
+    endpoint: "/api/chat/generate",
+    geminiConfigured: !!process.env.GEMINI_API_KEY,
+    activeModel: serverSettings.activeModel || "gemini-3.6-flash",
+    supportedMethods: ["GET", "POST"],
+    info: "Noa AI / SabanOS Gemini Response Generation Endpoint",
+  });
+});
+
+app.post("/api/chat/generate", async (req, res) => {
+  try {
+    const body = req.body || {};
+    const prompt = body.prompt || body.message || body.userMessage || body.incomingMessage || body.text || "";
+    const rawPhone = body.phone || body.customerPhone || "0500000000";
+    const phone = cleanPhone(rawPhone) || rawPhone;
+    const senderName = body.senderName || body.contactName || body.parsedClientName || "לקוח";
+    const context = body.context || body.knowledgeBase || "";
+    const history = body.history || body.conversationHistory || [];
+
+    if (!prompt || !prompt.trim()) {
+      return res.status(400).json({
+        success: false,
+        error: "תוכן ההודעה/הפרומפט ריק",
+      });
+    }
+
+    let generatedResponse = "";
+
+    // 1. Try Gemini API first if configured
+    const aiClient = getGeminiClient();
+    if (aiClient) {
+      try {
+        const modelName = serverSettings.activeModel || "gemini-3.6-flash";
+        const systemInstruction = `${serverSettings.systemPrompt}\n\nהקשר רקע ופרטי לקוח ח.סבן:\n- שם: ${senderName}\n- טלפון: ${phone}\n- מידע רקע: ${context}`;
+
+        let userPrompt = prompt;
+        if (Array.isArray(history) && history.length > 0) {
+          const histText = history
+            .map((h: any) => `${h.sender === "user" || h.sender === "contact" ? senderName : "נועה"}: ${h.text || h.message || ""}`)
+            .join("\n");
+          userPrompt = `היסטוריית שיחה:\n${histText}\n\nהודעה חדשה: ${prompt}`;
+        }
+
+        const genRes = await aiClient.models.generateContent({
+          model: modelName,
+          contents: userPrompt,
+          config: {
+            systemInstruction,
+            temperature: 0.7,
+            maxOutputTokens: 1024,
+          },
+        });
+
+        if (genRes.text) {
+          generatedResponse = genRes.text.trim();
+        }
+      } catch (geminiError: any) {
+        console.warn("[/api/chat/generate] Gemini call failed, falling back to local SabanOS engine:", geminiError?.message || geminiError);
+      }
+    }
+
+    // 2. Fallback to local intelligent SabanOS engine if Gemini is not configured or failed
+    if (!generatedResponse) {
+      const matchedOrders = stagedOrders.filter(
+        (o) => o.customerPhone.includes(phone) || phone.includes(cleanPhone(o.customerPhone))
+      );
+
+      if (/הזמנה|חומרי בניין|צמנט|סומסום|חול|טיט|מנוף|משאית|אספקה/i.test(prompt)) {
+        if (matchedOrders.length > 0) {
+          const lastOrd = matchedOrders[matchedOrders.length - 1];
+          generatedResponse = `שלום ${senderName}! 👋 מצאתי במערכת הזמנה פעילה (${lastOrd.orderNumber || lastOrd.id}) עבור ${lastOrd.customerName || 'האתר שלך'}. הסטטוס כרגע: ${lastOrd.status || 'בטיפול'}. 🚛`;
+        } else {
+          generatedResponse = `שלום ${senderName}! 👋 קיבלנו את פנייתך לגבי חומרי בניין וציוד. הבקשה נקלטה במערכת הסידור הלוגיסטי.`;
+        }
+      } else if (/^(היי|שלום|אהלן|בוקר טוב|ערב טוב|מה נשמע)/i.test(prompt)) {
+        generatedResponse = `היי ${senderName}! 👋 במה נועה AI וצוות ח. סבן יכולים לעזור לך היום?`;
+      } else {
+        generatedResponse = `שלום ${senderName}, קיבלנו את הודעתך: "${prompt}". הפקודה עובדה במערכת SabanOS וצוות ח. סבן מטפל בזה! 🚚`;
+      }
+    }
+
+    return res.json({
+      success: true,
+      response: generatedResponse,
+      reply: generatedResponse,
+      text: generatedResponse,
+      prompt,
+      phone,
+      senderName,
+      timestamp: new Date().toISOString(),
+    });
+  } catch (err: any) {
+    console.error("Error in /api/chat/generate:", err);
+    return res.status(500).json({
+      success: false,
+      error: err?.message || "Internal server error in /api/chat/generate",
+    });
+  }
 });
 
 // POST /api/chat/mode - Toggles auto vs manual mode

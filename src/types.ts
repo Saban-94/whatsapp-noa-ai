@@ -204,4 +204,5 @@ export interface ListenerEventPayload {
   sentToWhatsapp?: boolean;
   timestamp?: string;
   stagedOrder?: StagedOrder;
+  status?: 'sending' | 'sent' | 'failed';
 }

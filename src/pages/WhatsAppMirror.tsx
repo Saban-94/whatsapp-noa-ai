@@ -66,6 +66,7 @@ export const WhatsAppMirror: React.FC<WhatsAppMirrorProps> = ({ darkTheme = true
   // Manual Typing Input State
   const [manualInput, setManualInput] = useState<string>('');
   const [isSending, setIsSending] = useState<boolean>(false);
+  const [isGeneratingAi, setIsGeneratingAi] = useState<boolean>(false);
   const [sendFeedback, setSendFeedback] = useState<string | null>(null);
 
   // Auto Scroll Ref
@@ -84,7 +85,15 @@ export const WhatsAppMirror: React.FC<WhatsAppMirrorProps> = ({ darkTheme = true
         const evtData = await eventsRes.json();
         if (evtData.events && Array.isArray(evtData.events)) {
           const newEventsList: ListenerEventPayload[] = evtData.events;
-          setEvents(newEventsList);
+          
+          // Preserve local optimistic messages so they don't blink or vanish
+          setEvents((prev) => {
+            const serverIds = new Set(newEventsList.map((e) => e.id));
+            const pendingOptimistic = prev.filter(
+              (pe) => pe.id && pe.id.startsWith('evt_opt_') && !serverIds.has(pe.id)
+            );
+            return [...newEventsList, ...pendingOptimistic];
+          });
 
           // Check for new incoming events that weren't seen before
           let newlyArrived: ListenerEventPayload | null = null;
@@ -142,7 +151,25 @@ export const WhatsAppMirror: React.FC<WhatsAppMirrorProps> = ({ darkTheme = true
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [events, activeChatPhone]);
 
-  // Group events by phone number into unique customer chat threads
+  // Helper to extract phone / chat key safely without defaulting to placeholder '0500000000'
+  const extractPhoneKey = (evt: ListenerEventPayload): string => {
+    const raw =
+      evt.phone ||
+      (evt as any).senderPhone ||
+      (evt as any).customerPhone ||
+      (evt as any).from ||
+      (evt as any).phone_number ||
+      (evt as any).chatId ||
+      '';
+    const digits = raw ? raw.replace(/\D/g, '') : '';
+    if (digits && digits.length >= 7) return digits;
+    if (raw && raw.trim() && raw !== '0500000000') return raw.trim();
+    if (evt.isGroup && evt.groupId) return evt.groupId;
+    if (evt.id) return `chat_${evt.id}`;
+    return 'unknown_chat';
+  };
+
+  // Group events by phone number or unique chat identifier into customer threads
   const customerChatThreads = React.useMemo(() => {
     const threadMap: Record<
       string,
@@ -158,21 +185,37 @@ export const WhatsAppMirror: React.FC<WhatsAppMirrorProps> = ({ darkTheme = true
     > = {};
 
     events.forEach((evt) => {
-      const phone = evt.phone || '0500000000';
-      if (!threadMap[phone]) {
-        const profile = profiles[phone] || profiles[phone.replace(/\D/g, '')];
-        threadMap[phone] = {
-          phone,
-          name: profile?.name || evt.senderName || evt.parsedClientName || `לקוח (${phone})`,
+      const phoneKey = extractPhoneKey(evt);
+      const rawPhone =
+        evt.phone ||
+        (evt as any).senderPhone ||
+        (evt as any).customerPhone ||
+        (evt as any).from ||
+        '';
+      const cleanDigits = rawPhone ? rawPhone.replace(/\D/g, '') : '';
+
+      if (!threadMap[phoneKey]) {
+        const profile = profiles[phoneKey] || (cleanDigits ? profiles[cleanDigits] : null);
+        const displayName =
+          profile?.name ||
+          evt.senderName ||
+          evt.parsedClientName ||
+          (evt as any).contactName ||
+          (evt as any).sender ||
+          (cleanDigits ? `לקוח (${cleanDigits})` : evt.groupId ? `קבוצה ${evt.groupId}` : 'לקוח');
+
+        threadMap[phoneKey] = {
+          phone: phoneKey,
+          name: displayName,
           isGroup: evt.isGroup || false,
           groupId: evt.groupId,
           lastEvent: evt,
           eventList: [evt],
-          mode: chatModes[phone] || profile?.mode || 'auto',
+          mode: chatModes[phoneKey] || (cleanDigits ? chatModes[cleanDigits] : null) || profile?.mode || 'auto',
         };
       } else {
-        threadMap[phone].eventList.push(evt);
-        threadMap[phone].lastEvent = evt; // Latest
+        threadMap[phoneKey].eventList.push(evt);
+        threadMap[phoneKey].lastEvent = evt; // Latest
       }
     });
 
@@ -216,16 +259,44 @@ export const WhatsAppMirror: React.FC<WhatsAppMirrorProps> = ({ darkTheme = true
   const activeProfile = profiles[activeChatPhone] || profiles[activeChatPhone.replace(/\D/g, '')] || null;
   const activeMode = chatModes[activeChatPhone] || activeProfile?.mode || 'auto';
 
-  // Handle Manual Message Dispatch in Active Chat Thread
-  const handleSendManual = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!manualInput.trim() || !activeChatPhone || activeChatPhone === 'noa_command') return;
+  // Handle Manual Message Dispatch in Active Chat Thread (Optimistic UI - Never Delete on Error)
+  const handleSendManual = async (e?: React.FormEvent, retryText?: string, targetEvtId?: string) => {
+    if (e) e.preventDefault();
+    const textToSend = (retryText || manualInput).trim();
+    if (!textToSend || !activeChatPhone || activeChatPhone === 'noa_command') return;
 
     setIsSending(true);
     setSendFeedback(null);
 
-    const text = manualInput.trim();
     const targetName = activeThread?.name || 'לקוח';
+    const optId = targetEvtId || `evt_opt_${Date.now()}`;
+
+    // Create optimistic event entry
+    const optimisticEvt: ListenerEventPayload = {
+      id: optId,
+      phone: activeChatPhone,
+      senderName: 'מנהל מערכת (SabanOS Operator)',
+      isGroup: activeThread?.isGroup || false,
+      parsedClientName: targetName,
+      incomingMessage: `[מעקף מנהל ידני] ${textToSend}`,
+      noaResponse: textToSend,
+      sentToWhatsapp: false,
+      timestamp: new Date().toISOString(),
+      status: 'sending',
+    };
+
+    // Immediately update local state - message will NEVER disappear
+    setEvents((prev) => {
+      const exists = prev.some((item) => item.id === optId);
+      if (exists) {
+        return prev.map((item) => (item.id === optId ? optimisticEvt : item));
+      }
+      return [...prev, optimisticEvt];
+    });
+
+    if (!retryText) {
+      setManualInput('');
+    }
 
     try {
       const res = await fetch('/api/chat/send-manual', {
@@ -235,24 +306,72 @@ export const WhatsAppMirror: React.FC<WhatsAppMirrorProps> = ({ darkTheme = true
           phone: activeChatPhone,
           contactName: targetName,
           senderName: 'מנהל מערכת (SabanOS Operator)',
-          message: text,
+          message: textToSend,
           timestamp: new Date().toISOString(),
         }),
       });
 
       const data = await res.json();
       if (res.ok && data.success) {
-        setManualInput('');
+        // Mark optimistic message as successfully sent
+        setEvents((prev) =>
+          prev.map((item) =>
+            item.id === optId ? { ...item, sentToWhatsapp: true, status: 'sent' } : item
+          )
+        );
+        playWhatsAppOutgoingSound();
         setSendFeedback('הודעת המעקף נשלחה בוואטסאפ בהצלחה!');
         setTimeout(() => setSendFeedback(null), 3000);
-        fetchSyncData();
       } else {
-        throw new Error(data.error || 'שגיאה בשליחת הודעה');
+        throw new Error(data.error || 'שגיאה בשליחת הודעה לשרת');
       }
     } catch (err: any) {
-      setSendFeedback(`שגיאה: ${err?.message || 'נכשלה שליחת ההודעה'}`);
+      // DO NOT delete message! Mark status as failed and allow retry
+      setEvents((prev) =>
+        prev.map((item) =>
+          item.id === optId ? { ...item, status: 'failed' } : item
+        )
+      );
+      setSendFeedback(`שגיאה בשליחה: ${err?.message || 'ההודעה נשמרה בלוקאל - ניתן ללחוץ לניסיון חוזר'}`);
     } finally {
       setIsSending(false);
+    }
+  };
+
+  // Generate AI Response Draft via /api/chat/generate
+  const handleGenerateAiDraft = async () => {
+    if (!activeChatPhone || activeChatPhone === 'noa_command') return;
+    setIsGeneratingAi(true);
+    setSendFeedback('🤖 מייצר מענה חכם דרך Gemini / SabanOS...');
+
+    try {
+      const lastIncoming = activeThread?.lastEvent?.incomingMessage || 'שלום, במה אוכל לעזור?';
+      const res = await fetch('/api/chat/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          prompt: lastIncoming,
+          phone: activeChatPhone,
+          senderName: activeThread?.name || 'לקוח',
+          context: activeProfile
+            ? `חשבון: ${activeProfile.accountNumber || ''}, הערות: ${activeProfile.notes || ''}`
+            : '',
+        }),
+      });
+
+      const data = await res.json();
+      const aiReply = data.response || data.reply || data.text;
+      if (res.ok && aiReply) {
+        setManualInput(aiReply);
+        setSendFeedback('✨ מענה AI נוצר בהצלחה! לחץ "שלח לוואטסאפ" לבחירה.');
+      } else {
+        throw new Error(data.error || 'נכשלה יצירת מענה ב-Gemini');
+      }
+    } catch (err: any) {
+      console.warn('AI Generate error:', err);
+      setSendFeedback(`שגיאה ביצירת AI: ${err?.message || 'השרת לא החזיר מענה'}`);
+    } finally {
+      setIsGeneratingAi(false);
     }
   };
 
@@ -571,14 +690,21 @@ export const WhatsAppMirror: React.FC<WhatsAppMirrorProps> = ({ darkTheme = true
                         <div className="flex justify-end">
                           <div
                             className={`max-w-[80%] p-3 rounded-2xl rounded-tr-none text-xs shadow-md space-y-1 ${
-                              isManualMsg
+                              evt.status === 'failed'
+                                ? 'bg-rose-950/90 text-rose-100 border border-rose-500/80'
+                                : isManualMsg
                                 ? 'bg-amber-950/80 text-amber-100 border border-amber-600/50'
                                 : 'bg-[#005c4b] text-[#e9edef]'
                             }`}
                           >
                             <div className="flex items-center justify-between text-[10px] opacity-80 border-b border-white/10 pb-1">
                               <span className="font-bold flex items-center gap-1">
-                                {isManualMsg ? (
+                                {evt.status === 'failed' ? (
+                                  <>
+                                    <AlertCircle className="w-3.5 h-3.5 text-rose-400 animate-pulse" />
+                                    שליחה נכשלה (נשמר בזיכרון)
+                                  </>
+                                ) : isManualMsg ? (
                                   <>
                                     <Zap className="w-3 h-3 text-amber-400" />
                                     מעקף מנהל ידני
@@ -591,7 +717,20 @@ export const WhatsAppMirror: React.FC<WhatsAppMirrorProps> = ({ darkTheme = true
                                 )}
                               </span>
                               <span className="font-mono flex items-center gap-1">
-                                <CheckCheck className="w-3 h-3 text-cyan-300" />
+                                {evt.status === 'sending' ? (
+                                  <RefreshCw className="w-3 h-3 text-amber-300 animate-spin" />
+                                ) : evt.status === 'failed' ? (
+                                  <button
+                                    onClick={() => handleSendManual(undefined, evt.noaResponse, evt.id)}
+                                    className="bg-rose-600 hover:bg-rose-500 text-white px-2 py-0.5 rounded font-sans font-bold text-[9px] cursor-pointer flex items-center gap-1 shadow"
+                                    title="לחץ לניסיון שליחה חוזר"
+                                  >
+                                    <RefreshCw className="w-2.5 h-2.5" />
+                                    נסה שוב
+                                  </button>
+                                ) : (
+                                  <CheckCheck className="w-3 h-3 text-cyan-300" />
+                                )}
                                 {timeFormatted}
                               </span>
                             </div>
@@ -616,7 +755,26 @@ export const WhatsAppMirror: React.FC<WhatsAppMirrorProps> = ({ darkTheme = true
 
               {/* Typing Box */}
               <div className="p-3 bg-[#202c33] border-t border-[#222d34] shrink-0">
-                <form onSubmit={handleSendManual} className="flex items-center gap-2">
+                <form onSubmit={(e) => handleSendManual(e)} className="flex items-center gap-2">
+                  
+                  {/* AI Generate Prompt Button */}
+                  <button
+                    type="button"
+                    onClick={handleGenerateAiDraft}
+                    disabled={isGeneratingAi || isSending}
+                    className="p-2.5 bg-purple-600/30 hover:bg-purple-600/50 text-purple-200 border border-purple-500/50 rounded-xl font-bold transition-all cursor-pointer flex items-center gap-1 text-xs shrink-0"
+                    title="חולל טיוטת תשובה חכמה ב-Gemini / Noa AI"
+                  >
+                    {isGeneratingAi ? (
+                      <RefreshCw className="w-4 h-4 animate-spin text-purple-300" />
+                    ) : (
+                      <>
+                        <Sparkles className="w-4 h-4 text-purple-300" />
+                        <span className="hidden md:inline">צור מענה AI</span>
+                      </>
+                    )}
+                  </button>
+
                   <input
                     type="text"
                     value={manualInput}
@@ -624,7 +782,7 @@ export const WhatsAppMirror: React.FC<WhatsAppMirrorProps> = ({ darkTheme = true
                     placeholder={
                       activeMode === 'manual'
                         ? 'הקלד תגובה ידנית של המנהל (תעקוף את Noa AI ותשלח לוואטסאפ)...'
-                        : 'הקלד הודעת מעקף ללקוח (או העבר למצב ידני למענה רציף)...'
+                        : 'הקלד הודעת מעקף ללקוח (או לחץ "צור מענה AI")...'
                     }
                     disabled={isSending}
                     className="flex-1 text-xs px-4 py-2.5 rounded-xl bg-[#111b21] border border-[#2a3942] text-[#e9edef] placeholder-[#8696a0] focus:outline-none focus:border-[#00a884]"
