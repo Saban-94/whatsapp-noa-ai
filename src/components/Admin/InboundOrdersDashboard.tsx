@@ -253,7 +253,7 @@ export const InboundOrdersDashboard: React.FC<InboundOrdersDashboardProps> = ({
             <div>
               <div className="text-xs text-slate-400">קבוצה להתראות נודניק (כל 5 דק')</div>
               <div className="text-xs font-semibold text-slate-200 dir-ltr text-right">
-                120363405629688376@g.us
+                120363428842730390@g.us
               </div>
             </div>
           </div>
