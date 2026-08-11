@@ -30,6 +30,7 @@ const express = require('express');
 const axios = require('axios');
 const qrcode = require('qrcode-terminal');
 const { Client, LocalAuth } = require('whatsapp-web.js');
+const noaBrain = require('../noaBrain.js');
 
 // ==============================================================================
 // 1. הגדרות סביבה ומשתנים גלובליים
@@ -181,11 +182,11 @@ client.on('message', async (msg) => {
         source: payload.source,
       }, { timeout: 8000 });
 
-      if (vercelRes.data && vercelRes.data.response) {
-        generatedReply = vercelRes.data.response;
+      if (vercelRes.data && (vercelRes.data.response || vercelRes.data.text || vercelRes.data.noaResponse)) {
+        generatedReply = vercelRes.data.response || vercelRes.data.text || vercelRes.data.noaResponse;
       }
     } catch (vErr) {
-      console.warn('⚠️ אזהרה: סנכרון מול Vercel/PWA נכשל (משתמש במענה גיבוי local):', vErr.message);
+      console.warn('⚠️ אזהרה: סנכרון מול Vercel/PWA נכשל (משתמש במענה מוח Noa AI מקומי):', vErr.message);
     }
 
     // ב. שיגור Webhook מראה ל-Google Apps Script
@@ -197,7 +198,31 @@ client.on('message', async (msg) => {
 
     // 5. ניסוח מענה ברירת מחדל במידה ושרת ה-AI לא החזיר תשובה
     if (!generatedReply) {
-      if (/^(היי|שלום|אהלן|בוקר טוב|ערב טוב|מה נשמע)/i.test(incomingMessage) && incomingMessage.length < 20) {
+      let brainRes = null;
+      const processFn = (noaBrain && typeof noaBrain.processInboundMessage === 'function') 
+        ? noaBrain.processInboundMessage 
+        : (noaBrain && noaBrain.default && typeof noaBrain.default.processInboundMessage === 'function') 
+          ? noaBrain.default.processInboundMessage 
+          : null;
+
+      if (processFn) {
+        try {
+          brainRes = processFn(incomingMessage, {
+            phone,
+            senderName
+          });
+        } catch (bErr) {
+          console.warn('⚠️ שגיאה בעיבוד מוח נועה AI:', bErr.message);
+        }
+      }
+
+      if (brainRes && brainRes.text) {
+        if (brainRes.isSimpleGreeting) {
+          generatedReply = `היי *${senderName}*! 👋 במה אוכל לעזור לך היום בח. סבן?`;
+        } else {
+          generatedReply = brainRes.text;
+        }
+      } else if (/^(היי|שלום|אהלן|בוקר טוב|ערב טוב|מה נשמע)/i.test(incomingMessage) && incomingMessage.length < 20) {
         generatedReply = `היי *${senderName}*! 👋 במה אוכל לעזור לך היום בח. סבן?`;
       } else if (isGroup) {
         generatedReply = `אהלן *${senderName}*, קיבלנו את ההודעה בקבוצה והיא בטיפול בסידור הובלות! 🚛`;
