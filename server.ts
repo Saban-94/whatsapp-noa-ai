@@ -1,6 +1,12 @@
 import express from "express";
 import path from "path";
 import { GoogleGenAI } from "@google/genai";
+import { createRequire } from "module";
+
+const require = createRequire(import.meta.url);
+const noaBrainModule = require("./noaBrain.js");
+
+const masterInventoryList = (noaBrainModule && noaBrainModule.SABAN_MASTER_INVENTORY) || [];
 
 const app = express();
 const PORT = 3000;
@@ -1600,25 +1606,173 @@ app.post("/api/transcribe-voice", async (req, res) => {
   });
 });
 
-// Logistic Dictionary (מילון_לוגיסטי) state & product database
-let logisticDictionary = [
-  { sku: "10001", productName: 'שק מלט אפור 50 ק"ג', aliases: ["מלט אפור 50", "שק מלט 50", "מלט 50", "מלט 50 קג"], unit: "שק", category: "חומרי מליטה", price: 38 },
-  { sku: "10002", productName: 'שק מלט אפור 25 ק"ג', aliases: ["מלט", "שק מלט", "מלט אפור", "מלט 25"], unit: "שק", category: "חומרי מליטה", price: 22 },
-  { sku: "10003", productName: 'שק מלט לבן 25 ק"ג', aliases: ["מלט לבן", "שק מלט לבן", "מלט לבן 25"], unit: "שק", category: "חומרי מליטה", price: 34 },
-  { sku: "20001", productName: "בלה סומסום נקי", aliases: ["סומסום", "בלה סומסום", "שק סומסום", "סומסום נקי"], unit: "בלה", category: "חול וסומסום", price: 110 },
-  { sku: "20002", productName: "בלה חול מחצבה (טיט)", aliases: ["חול", "חול מחצבה", "טיט", "בלה חול", "בלה טיט"], unit: "בלה", category: "חול וסומסום", price: 105 },
-  { sku: "20003", productName: "בלה חצץ 1/2 (עדש)", aliases: ["חצץ", "עדש", "בלה חצץ", "חצץ עדש"], unit: "בלה", category: "חול וסומסום", price: 115 },
-  { sku: "20004", productName: "בלה זיפזיף לריצוף", aliases: ["זיפזיף", "בלה זיפזיף", "חול זיפזיף"], unit: "בלה", category: "חול וסומסום", price: 120 },
-  { sku: "30001", productName: "משטח בלוק בטון 20 (96 יח')", aliases: ["בלוק בטון", "בלוק 20", "בלוק בטון 20", "בלוקים"], unit: "משטח", category: "בלוקים", price: 480 },
-  { sku: "30002", productName: "משטח בלוק איטונג 20 (72 יח')", aliases: ["איטונג", "בלוק איטונג", "איטונג 20", "בלוק איטונג 20"], unit: "משטח", category: "בלוקים", price: 650 },
-  { sku: "30003", productName: "משטח בלוק פומס 20 (96 יח')", aliases: ["פומס", "בלוק פומס", "פומס 20"], unit: "משטח", category: "בלוקים", price: 520 },
-  { sku: "40001", productName: 'שק טיח גבס תרמי 25 ק"ג', aliases: ["טיח", "טיח גבס", "טיח תרמי", "שק טיח"], unit: "שק", category: "גבס וטיח", price: 45 },
-  { sku: "40002", productName: 'לוח גבס ירוק עמיד מים 12.5 מ"מ', aliases: ["גבס ירוק", "לוח גבס ירוק", "גבס נגד מים"], unit: "יחידה", category: "גבס וטיח", price: 42 },
-  { sku: "40003", productName: 'לוח גבס לבן סטנדרטי 12.5 מ"מ', aliases: ["גבס לבן", "לוח גבס לבן", "לוח גבס"], unit: "יחידה", category: "גבס וטיח", price: 32 },
-  { sku: "50001", productName: 'פנל מבודד קלקר 50 מ"מ', aliases: ["פנל מבודד", "פנל קלקר", "פנל 50", "פנל מבודד 50"], unit: "מ\"ר", category: "בידוד", price: 85 },
-  { sku: "50002", productName: 'פנל מבודד צמר סלעים 80 מ"מ', aliases: ["פנל צמר סלעים", "פנל מבודד 80", "צמר סלעים"], unit: "מ\"ר", category: "בידוד", price: 125 },
-  { sku: "60001", productName: "משטח עץ טעון פיקדון", aliases: ["משטח", "משטחים", "פיקדון משטח", "משטח עץ"], unit: "משטח", category: "פקדונות", price: 45 },
-];
+// Logistic Dictionary (מילון_לוגיסטי) & Master Inventory state
+let logisticDictionary: any[] = masterInventoryList.length > 0
+  ? masterInventoryList.map((item: any) => ({
+      sku: item.sku,
+      productName: item.name,
+      aliases: item.aliases || [item.name],
+      unit: item.unit || "יחידה",
+      category: item.category || "כללי",
+      price: item.price || 0,
+      requiresDeposit: !!item.requiresDeposit,
+      depositSku: item.depositSku || null,
+      depositName: item.depositName || null,
+      depositPrice: item.depositPrice || 0,
+      stock: item.stock || 100,
+    }))
+  : [
+      { sku: "10001", productName: 'שק מלט אפור 50 ק"ג', aliases: ["מלט אפור 50", "שק מלט 50", "מלט 50", "מלט 50 קג"], unit: "שק", category: "חומרי מליטה", price: 38 },
+      { sku: "10002", productName: 'שק מלט אפור 25 ק"ג', aliases: ["מלט", "שק מלט", "מלט אפור", "מלט 25"], unit: "שק", category: "חומרי מליטה", price: 22, requiresDeposit: true, depositSku: "60060", depositName: "משטח סבן פקדון", depositPrice: 40 },
+      { sku: "20001", productName: "בלה סומסום נקי", aliases: ["סומסום", "בלה סומסום", "שק סומסום", "סומסום נקי"], unit: "בלה", category: "חול וסומסום", price: 110, requiresDeposit: true, depositSku: "60002", depositName: "שק גדול פקדון", depositPrice: 30 },
+      { sku: "20002", productName: "בלה חול מחצבה (טיט)", aliases: ["חול", "חול מחצבה", "טיט", "בלה חול", "בלה טיט"], unit: "בלה", category: "חול וסומסום", price: 105, requiresDeposit: true, depositSku: "60002", depositName: "שק גדול פקדון", depositPrice: 30 },
+      { sku: "30001", productName: "משטח בלוק בטון 20 (96 יח')", aliases: ["בלוק בטון", "בלוק 20", "בלוק בטון 20", "בלוקים"], unit: "משטח", category: "בלוקים", price: 480, requiresDeposit: true, depositSku: "60006", depositName: "משטח בלוקים פקדון", depositPrice: 50 },
+      { sku: "60001", productName: "משטח עץ טעון פיקדון", aliases: ["משטח", "משטחים", "פיקדון משטח", "משטח עץ"], unit: "משטח", category: "פקדונות", price: 45 },
+      { sku: "60006", productName: "משטח בלוקים פקדון", aliases: ["משטח בלוקים", "פקדון בלוקים"], unit: "משטח", category: "פקדונות", price: 50 },
+      { sku: "60060", productName: "משטח סבן פקדון", aliases: ["משטח סבן", "פקדון סבן"], unit: "משטח", category: "פקדונות", price: 40 },
+      { sku: "60002", productName: "שק גדול פקדון (בלה)", aliases: ["פקדון בלה", "פקדון שק גדול"], unit: "יחידה", category: "פקדונות", price: 30 },
+      { sku: "60004", productName: "חבית פקדון", aliases: ["חבית", "פקדון חבית"], unit: "יחידה", category: "פקדונות", price: 100 },
+    ];
+
+// GET Master Inventory & Stock Status
+app.get("/api/inventory", (req, res) => {
+  const categoriesMap: Record<string, number> = {};
+  let totalStockValue = 0;
+  let itemsWithDeposit = 0;
+
+  logisticDictionary.forEach((item: any) => {
+    const cat = item.category || "כללי";
+    categoriesMap[cat] = (categoriesMap[cat] || 0) + 1;
+    totalStockValue += (item.price || 0) * (item.stock || 100);
+    if (item.requiresDeposit) itemsWithDeposit++;
+  });
+
+  res.json({
+    success: true,
+    totalItems: logisticDictionary.length,
+    totalStockValue,
+    itemsWithDeposit,
+    categories: Object.keys(categoriesMap).map((cat) => ({ category: cat, count: categoriesMap[cat] })),
+    depositSKUs: ["60006", "60060", "60002", "60004", "60001"],
+    inventory: logisticDictionary,
+  });
+});
+
+// GET Deposit Items & Deposit Rules
+app.get("/api/inventory/deposits", (req, res) => {
+  const depositItems = logisticDictionary.filter((i: any) =>
+    i.category === "פקדונות" || ["60006", "60060", "60002", "60004", "60001"].includes(i.sku)
+  );
+
+  const itemsRequiringDeposit = logisticDictionary.filter((i: any) => i.requiresDeposit);
+
+  res.json({
+    success: true,
+    depositItemsCount: depositItems.length,
+    itemsRequiringDepositCount: itemsRequiringDeposit.length,
+    depositItems,
+    itemsRequiringDeposit: itemsRequiringDeposit.map((i: any) => ({
+      sku: i.sku,
+      productName: i.productName,
+      unit: i.unit,
+      depositSku: i.depositSku,
+      depositName: i.depositName,
+      depositPrice: i.depositPrice,
+    })),
+  });
+});
+
+// POST Calculate Deposits for an Order
+app.post("/api/inventory/calculate-deposit", (req, res) => {
+  const { items = [], orderText = "" } = req.body || {};
+
+  let itemsToCalculate: any[] = [];
+
+  if (Array.isArray(items) && items.length > 0) {
+    itemsToCalculate = items;
+  } else if (orderText && typeof orderText === "string") {
+    const lines = orderText.split(/[\n,;+]| וגם | ועוד |\t/).map((l) => l.trim()).filter(Boolean);
+    for (const line of lines) {
+      let qty = 1;
+      const numMatch = line.match(/(\d+)/);
+      if (numMatch) qty = parseInt(numMatch[1], 10);
+
+      const matchedProd = logisticDictionary.find((p: any) =>
+        p.aliases?.some((a: string) => line.toLowerCase().includes(a.toLowerCase())) ||
+        line.toLowerCase().includes(p.productName.toLowerCase())
+      );
+
+      if (matchedProd) {
+        itemsToCalculate.push({ sku: matchedProd.sku, quantity: qty, productName: matchedProd.productName });
+      }
+    }
+  }
+
+  const verifiedItems: any[] = [];
+  const requiredDepositsMap: Record<string, { depositSku: string; depositName: string; depositUnitPrice: number; quantity: number }> = {};
+
+  itemsToCalculate.forEach((item: any) => {
+    const matched = logisticDictionary.find((p: any) => p.sku === item.sku) ||
+      logisticDictionary.find((p: any) => p.productName.toLowerCase() === (item.productName || "").toLowerCase());
+
+    const qty = Number(item.quantity) || 1;
+    if (matched) {
+      const unitPrice = matched.price || 0;
+      verifiedItems.push({
+        sku: matched.sku,
+        productName: matched.productName,
+        quantity: qty,
+        unit: matched.unit,
+        unitPrice,
+        totalPrice: unitPrice * qty,
+        requiresDeposit: matched.requiresDeposit,
+      });
+
+      if (matched.requiresDeposit && matched.depositSku) {
+        const depSku = matched.depositSku;
+        const depName = matched.depositName || "פקדון אריזה/משטח";
+        const depPrice = matched.depositPrice || 0;
+
+        let depositQty = qty;
+        if (matched.unit === "שק" && qty >= 10) {
+          depositQty = Math.ceil(qty / 50);
+        }
+
+        if (!requiredDepositsMap[depSku]) {
+          requiredDepositsMap[depSku] = {
+            depositSku: depSku,
+            depositName: depName,
+            depositUnitPrice: depPrice,
+            quantity: depositQty,
+          };
+        } else {
+          requiredDepositsMap[depSku].quantity += depositQty;
+        }
+      }
+    }
+  });
+
+  const requiredDeposits = Object.values(requiredDepositsMap).map((d) => ({
+    ...d,
+    depositTotalPrice: d.depositUnitPrice * d.quantity,
+  }));
+
+  const itemsTotal = verifiedItems.reduce((acc, i) => acc + i.totalPrice, 0);
+  const depositsTotal = requiredDeposits.reduce((acc, d) => acc + d.depositTotalPrice, 0);
+  const grandTotal = itemsTotal + depositsTotal;
+
+  res.json({
+    success: true,
+    verifiedItems,
+    requiredDeposits,
+    summary: {
+      itemsTotal,
+      depositsTotal,
+      grandTotal,
+      requiresDeposits: requiredDeposits.length > 0,
+    },
+  });
+});
 
 // GET Logistic Products Dictionary (מילון_לוגיסטי)
 app.get("/api/products/dictionary", async (req, res) => {
@@ -1999,9 +2153,47 @@ function verifyOrderLocally(userMessage: string, customerName: string = "לקו�
     text += `⚠️ *מוצרים לבדיקת מחסן:* ${unmatchedItems.map((u) => `${u.quantity}x ${u.name}`).join(", ")}\n\n`;
   }
 
+  // Calculate required deposits for verified items
+  const depositItemsMap: Record<string, { depositSku: string; depositName: string; depositUnitPrice: number; quantity: number }> = {};
+  verifiedItems.forEach((v) => {
+    const matched = logisticDictionary.find((p: any) => p.sku === v.sku);
+    if (matched && matched.requiresDeposit && matched.depositSku) {
+      const depSku = matched.depositSku;
+      const depName = matched.depositName || "פקדון אריזה/משטח";
+      const depPrice = matched.depositPrice || 0;
+      let depQty = v.quantity;
+      if (matched.unit === "שק" && v.quantity >= 10) {
+        depQty = Math.ceil(v.quantity / 50);
+      }
+      if (!depositItemsMap[depSku]) {
+        depositItemsMap[depSku] = { depositSku: depSku, depositName: depName, depositUnitPrice: depPrice, quantity: depQty };
+      } else {
+        depositItemsMap[depSku].quantity += depQty;
+      }
+    }
+  });
+
+  const depositList = Object.values(depositItemsMap);
+  if (depositList.length > 0) {
+    text += `📌 *פקדונות משטחים ואריזות נדרשים:*\n`;
+    depositList.forEach((d) => {
+      text += ` • ${d.depositName} [מק"ט ${d.depositSku}] — ${d.quantity} יחידות (₪${d.depositUnitPrice} ליח', סה"כ: ₪${d.depositUnitPrice * d.quantity})\n`;
+    });
+    text += `\n`;
+  }
+
   if (ambiguousItems.length === 0) {
-    const total = verifiedItems.reduce((acc, i) => acc + i.totalPrice, 0);
-    if (total > 0) text += `💰 *סה"כ משוער לחיוב:* ₪${total}\n\n`;
+    const itemsTotal = verifiedItems.reduce((acc, i) => acc + i.totalPrice, 0);
+    const depositsTotal = depositList.reduce((acc, d) => acc + d.depositUnitPrice * d.quantity, 0);
+    const grandTotal = itemsTotal + depositsTotal;
+
+    if (grandTotal > 0) {
+      text += `💰 *סה"כ לחיוב משוער:* ₪${grandTotal}`;
+      if (depositsTotal > 0) {
+        text += ` (מוצרים: ₪${itemsTotal} + פקדונות: ₪${depositsTotal})`;
+      }
+      text += `\n\n`;
+    }
     text += `ההזמנה המאומתת הועברה לצוות הלוגיסטיקה לטיפול מיידי! 🚛 🏗️`;
   } else {
     text += `לאחר אישורך על המק"ט המדויק, נעביר את ההזמנה המאומתת לצוות הלוגיסטיקה! 🚛`;
