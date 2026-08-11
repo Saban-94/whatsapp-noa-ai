@@ -1,4 +1,4 @@
-const CACHE_NAME = 'noa-ai-pwa-v3';
+const CACHE_NAME = 'noa-ai-pwa-v4';
 const STATIC_ASSETS = [
   '/',
   '/index.html',
@@ -88,9 +88,23 @@ self.addEventListener('fetch', (event) => {
   );
 });
 
+// Background Sync Listener - Handles queued offline actions
+self.addEventListener('sync', (event) => {
+  console.log('[ServiceWorker] Background Sync Triggered:', event.tag);
+  if (event.tag === 'noa-sync-queue' || event.tag === 'outbound-message-sync') {
+    event.waitUntil(
+      self.clients.matchAll().then((clients) => {
+        clients.forEach((client) => {
+          client.postMessage({ type: 'BACKGROUND_SYNC_TRIGGERED', tag: event.tag });
+        });
+      })
+    );
+  }
+});
+
 // Push Event - Background Web Push Notifications
 self.addEventListener('push', (event) => {
-  let data = { title: 'נועה AI - הודעה חדשה', body: 'התקבלה עדכון חדש במערכת SabanOS', icon: '/icon.svg', badge: '/icon.svg' };
+  let data = { title: 'נועה AI - הודעה חדשה 💬', body: 'התקבלה עדכון חדש במערכת SabanOS', icon: '/icon.svg', badge: '/icon.svg' };
   
   if (event.data) {
     try {
@@ -106,7 +120,7 @@ self.addEventListener('push', (event) => {
     badge: data.badge || '/icon.svg',
     dir: 'rtl',
     lang: 'he',
-    vibrate: [100, 50, 100],
+    vibrate: [100, 50, 100, 50, 150],
     data: data.url || '/',
     actions: [
       { action: 'open', title: 'פתח אפליקציה' },
@@ -140,3 +154,11 @@ self.addEventListener('notificationclick', (event) => {
     })
   );
 });
+
+// Message Event - Inter-process communication with client UI
+self.addEventListener('message', (event) => {
+  if (event.data && event.data.type === 'SKIP_WAITING') {
+    self.skipWaiting();
+  }
+});
+

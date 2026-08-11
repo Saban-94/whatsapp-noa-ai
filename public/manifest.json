@@ -1,15 +1,34 @@
 {
-  "name": "נועה AI - ניהול לוגיסטי",
+  "name": "נועה AI - ניהול לוגיסטי & SabanOS",
   "short_name": "נועה AI",
-  "description": "מערכת ניהול לוגיסטי וניטור הזמנות חכמה מבית SabanOS",
+  "description": "מערכת ניהול לוגיסטי, סידור עבודה וניטור פניות חכמה בזמן אמת מבית ח. סבן חומרי בניין 1994 בע\"מ",
   "start_url": "/",
+  "id": "/",
+  "scope": "/",
   "display": "standalone",
+  "display_override": ["standalone", "window-controls-overlay", "minimal-ui"],
   "orientation": "any",
   "dir": "rtl",
   "lang": "he",
   "background_color": "#0f172a",
-  "theme_color": "#1e3a8a",
-  "categories": ["business", "productivity", "utilities"],
+  "theme_color": "#0f172a",
+  "categories": ["business", "productivity", "utilities", "logistics"],
+  "shortcuts": [
+    {
+      "name": "סידור עבודה ופניות",
+      "short_name": "סידור עבודה",
+      "description": "פתח את לוח סידור העבודה והפניות הנכנסות",
+      "url": "/?tab=inbound",
+      "icons": [{ "src": "/icon.svg", "sizes": "512x512" }]
+    },
+    {
+      "name": "שיקוף WhatsApp",
+      "short_name": "ווטסאפ",
+      "description": "פתח את מסך שיקוף ה-WhatsApp בזמן אמת",
+      "url": "/?tab=mirror",
+      "icons": [{ "src": "/icon.svg", "sizes": "512x512" }]
+    }
+  ],
   "icons": [
     {
       "src": "/icon.svg",
