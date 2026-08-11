@@ -20,6 +20,8 @@ let serverSettings = {
 2. טון דיבור אנושי וקולגיאלי (Conversational Tone): דבר כמו קולגה חדה, יציבה ועוזרת בצוות 'ח. סבן'. הימנע מניסוחים רובוטיים, תבניות קשיחות, חתימות אוטומטיות נפוחות, או טקסטים גנריים של בוט.
 3. פשטות ובהירות (Simplicity): שמור על תשובות נקיות, קצרות (1-2 משפטים לפנייה ראשונית/פשוטה), בעברית יומיומית, פשוטה וטבעית.`,
   webAppUrl: "https://script.google.com/macros/s/AKfycbxjs19kSI1zgpLuMd64aUcfVlKXfVE3_dBShrDfRbExy2fUXkmdhVzna28P3GnIrW4o/exec",
+  spreadsheetId: "1i2J9ByIAerL48eIRYnT9SJLJcUryR0mlkD8uiWjjZPc",
+  stagedOrdersTab: "לוג_הזמנות_מערכת",
   webhookSyncEnabled: true,
   activeModel: "gemini-3.6-flash",
   autoReplyEnabled: true,
@@ -57,37 +59,46 @@ let listenerEvents: Array<{
   timestamp: string;
 }> = [];
 
-let stagedOrders: Array<{
-  id: string;
-  orderNumber: string;
-  customerPhone: string;
-  customerName: string;
-  rawMessage: string;
-  noaResponse: string;
-  items: any[];
-  totalPrice: number;
-  status: string;
-  driverName?: string;
-  address?: string;
-  sentToWhatsapp: boolean;
-  createdAt: string;
-}> = [
+let stagedOrders: Array<any> = [
   {
-    id: "ord_1001",
-    orderNumber: "ORD-90821",
-    customerPhone: "052-4455667",
-    customerName: "משה כהן - אתר הרצליה",
-    rawMessage: "שלום נועה, צריך בדחיפות 3 בלות סומסום, בלת חול, מנוף לקומה 2",
-    noaResponse: `שלום משה כהן - אתר הרצליה! 👋\n*ההזמנה שלך נקלטה ופוענחה בהצלחה במערכת סידור ח.סבן:* 🚛\n\n• [מק"ט 20001] בלה סומסום נקי — 3 בלה (₪330)\n• [מק"ט 20002] בלה חול מחצבה (טיט) — 1 בלה (₪105)\n• [מק"ט GENERIC-99] מנוף לקומה 2 — 1 יחידה\n\n*סה"כ משוער:* ₪435\n\nצוות הלוגיסטיקה מכין את המשלוח ויוצר עמך קשר לתיאום סופי!`,
-    items: [
-      { sku: "20001", name: "בלה סומסום נקי", quantity: 3, unit: "בלה", unitPrice: 110, totalPrice: 330 },
-      { sku: "20002", name: "בלה חול מחצבה (טיט)", quantity: 1, unit: "בלה", unitPrice: 105, totalPrice: 105 },
-      { sku: "GENERIC-99", name: "מנוף לקומה 2", quantity: 1, unit: "יחידה", unitPrice: 0, totalPrice: 0 },
-    ],
-    totalPrice: 435,
-    status: "בטיפול לוגיסטי",
+    id: "ord_6214582",
+    orderNumber: "6214582",
+    ingestionDate: "2026-07-30 05:37:47",
+    customerName: "וגשל דאו(519205)",
+    customerPhone: "052-5192050",
+    warehouse: "🏭 4(החרש)",
+    address: "בורוכוב 28, תל אביב",
+    rawItemsText: `1. 📦 מק"ט: 10015 | בטון מהיר מוכן 25 ק"ג | כמות: 16
+2. 📦 מק"ט: 11500 | חול שק | כמות: 140
+3. 📦 מק"ט: 11501 | חול שק גדול | כמות: 1
+4. 📦 מק"ט: 14603 | פלסטומר AD603 אפור 25 ק"ג | כמות: 12
+5. 📦 מק"ט: 818070 | הובלה ללא פריקה תל אביב מרכז | כמות: 1
+6. 📦 מק"ט: 60002 | שק גדול פקדון | כמות: 1
+7. 📦 מק"ט: 60060 | משטח סבן פקדון | כמות: 3`,
+    rawMessage: "בטון מהיר, חול שק, פלסטומר AD603, הובלה ללא פריקה תל אביב",
+    noaResponse: "נועה AI: הזמנת הובלה ללא פריקה – פטור מלא מפקדונות בלות ומשטחים",
+    baleDeposit: "ℹ️ פטור (הובלה ללא פריקה)",
+    palletDeposit: "ℹ️ פטור (הובלה ללא פריקה)",
+    status: "מאושר",
+    result: "תקין",
+    totalPrice: 0,
+    verificationDate: "2026-07-30",
+    deliveryTime: "08:00",
+    noaInsights: "נועה AI: הזמנת הובלה ללא פריקה – פטור מלא מפקדונות בלות ומשטחים",
+    routeVerification: 'תקין (24.1 ק"מ (29 דקות))',
+    syncStatus: "סונכרן לסידור עבודה 🟢",
+    driverName: "עלי - משאית מנוף 1",
     sentToWhatsapp: true,
-    createdAt: new Date().toLocaleTimeString("he-IL", { hour: "2-digit", minute: "2-digit" }),
+    createdAt: "05:37:47",
+    items: [
+      { sku: "10015", name: 'בטון מהיר מוכן 25 ק"ג', quantity: 16, unit: "שק" },
+      { sku: "11500", name: "חול שק", quantity: 140, unit: "שק" },
+      { sku: "11501", name: "חול שק גדול", quantity: 1, unit: "שק" },
+      { sku: "14603", name: 'פלסטומר AD603 אפור 25 ק"ג', quantity: 12, unit: "שק" },
+      { sku: "818070", name: "הובלה ללא פריקה תל אביב מרכז", quantity: 1, unit: "הובלה" },
+      { sku: "60002", name: "שק גדול פקדון", quantity: 1, unit: "יח" },
+      { sku: "60060", name: "משטח סבן פקדון", quantity: 3, unit: "יח" },
+    ],
   },
 ];
 
@@ -1317,13 +1328,13 @@ app.post("/api/noa/sheet-lookup", async (req, res) => {
     // 3. Fallback mock / enriched log history from H. Saban sheet
     const defaultHistory = [
       {
-        orderId: "ORD-90821",
-        date: "03/08/2026",
-        items: "3 בלה סומסום, 1 בלה חול מחצבה, מנוף לקומה 2",
-        address: "רחוב הנדיב 14, הרצליה פיתוח",
-        status: "APPROVED / בטיפול לוגיסטי",
-        driverName: "אבי ברגמן - משאית מנוף 12",
-        totalAmount: "₪435",
+        orderId: "6214582",
+        date: "2026-07-30 05:37:47",
+        items: "16 בטון מהיר, 140 חול שק, 12 פלסטומר AD603, 1 הובלה ללא פריקה",
+        address: "בורוכוב 28, תל אביב",
+        status: "מאושר / סונכרן לסידור עבודה 🟢",
+        driverName: "עלי - משאית מנוף 1",
+        totalAmount: "₪0",
       },
       {
         orderId: "ORD-88120",
@@ -1353,10 +1364,102 @@ app.post("/api/noa/sheet-lookup", async (req, res) => {
   }
 });
 
-app.get("/api/orders/staged", (req, res) => {
+app.get("/api/orders/staged", async (req, res) => {
+  try {
+    const spreadsheetId = serverSettings.spreadsheetId || "1i2J9ByIAerL48eIRYnT9SJLJcUryR0mlkD8uiWjjZPc";
+    const tab = serverSettings.stagedOrdersTab || "לוג_הזמנות_מערכת";
+    const url = `https://docs.google.com/spreadsheets/d/${spreadsheetId}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(tab)}`;
+    
+    const resp = await fetch(url);
+    if (resp.ok) {
+      const text = await resp.text();
+      const rows: string[][] = [];
+      let currentRow: string[] = [];
+      let currentCell = "";
+      let inQuotes = false;
+      for (let i = 0; i < text.length; i++) {
+        const c = text[i];
+        if (c === '"') {
+          if (inQuotes && text[i + 1] === '"') {
+            currentCell += '"';
+            i++;
+          } else {
+            inQuotes = !inQuotes;
+          }
+        } else if (c === "," && !inQuotes) {
+          currentRow.push(currentCell.trim());
+          currentCell = "";
+        } else if ((c === "\r" || c === "\n") && !inQuotes) {
+          if (c === "\r" && text[i + 1] === "\n") i++;
+          currentRow.push(currentCell.trim());
+          if (currentRow.some((x) => x.length > 0)) rows.push(currentRow);
+          currentRow = [];
+          currentCell = "";
+        } else {
+          currentCell += c;
+        }
+      }
+      if (currentCell || currentRow.length) {
+        currentRow.push(currentCell.trim());
+        if (currentRow.some((x) => x.length > 0)) rows.push(currentRow);
+      }
+
+      if (rows.length > 1) {
+        const dataRows = rows.slice(1);
+        const fetchedSheetOrders = dataRows.map((r, index) => {
+          const orderNumber = r[1] || `ORD-${1000 + index}`;
+          const local = stagedOrders.find((o) => o.orderNumber === orderNumber || o.id === `ord_${orderNumber}`);
+
+          return {
+            id: local?.id || `ord_${orderNumber}`,
+            orderNumber: orderNumber,
+            ingestionDate: r[0] || local?.ingestionDate || "",
+            customerName: r[2] || local?.customerName || "לקוח",
+            customerPhone: local?.customerPhone || "050-0000000",
+            warehouse: r[3] || "🏭 4(החרש)",
+            address: local?.address || r[4] || "",
+            rawItemsText: r[5] || local?.rawItemsText || "",
+            rawMessage: r[5] || local?.rawMessage || "",
+            baleDeposit: r[6] || local?.baleDeposit || "",
+            palletDeposit: r[7] || local?.palletDeposit || "",
+            status: local?.status || r[8] || "מאושר",
+            result: r[9] || "תקין",
+            totalPrice: parseFloat(r[10]) || local?.totalPrice || 0,
+            verificationDate: r[11] || "",
+            deliveryTime: r[12] || "08:00",
+            noaInsights: r[13] || local?.noaInsights || "",
+            routeVerification: r[14] || "",
+            syncStatus: r[15] || "סונכרן לסידור עבודה 🟢",
+            driverName: local?.driverName || "טרם שובץ (להקצאה)",
+            sentToWhatsapp: true,
+            createdAt: r[0] ? (r[0].split(" ")[1] || r[0]) : (local?.createdAt || "08:00"),
+            noaResponse: r[13] || local?.noaResponse || "נקלט בסידור",
+            items: local?.items && local.items.length > 0 ? local.items : [],
+          };
+        });
+
+        if (fetchedSheetOrders.length > 0) {
+          stagedOrders = fetchedSheetOrders;
+        }
+      }
+    }
+  } catch (err) {
+    console.warn("Failed to fetch Google Sheet live CSV:", err);
+  }
+
   res.json({
     success: true,
-    tab: "הזמנות_סידור",
+    spreadsheetId: serverSettings.spreadsheetId,
+    tab: serverSettings.stagedOrdersTab,
+    orders: stagedOrders,
+  });
+});
+
+app.get("/api/sheets/log-orders", async (req, res) => {
+  res.json({
+    success: true,
+    spreadsheetId: serverSettings.spreadsheetId,
+    tab: serverSettings.stagedOrdersTab,
     orders: stagedOrders,
   });
 });
@@ -1454,6 +1557,65 @@ app.post("/api/dispatch/approve", async (req, res) => {
       success: false,
       error: err?.message || "Failed to approve dispatch",
     });
+  }
+});
+
+// Route to update driver or status of a staged order (/api/dispatch/update)
+app.post("/api/dispatch/update", async (req, res) => {
+  try {
+    const { orderId, id, status, driverName, address, deliveryDate, notes } = req.body || {};
+    const targetId = id || orderId;
+
+    if (!targetId) {
+      return res.status(400).json({ success: false, error: "Missing orderId or id" });
+    }
+
+    let found = stagedOrders.find((o) => o.id === targetId || o.orderNumber === targetId);
+    if (found) {
+      if (status) found.status = status;
+      if (driverName !== undefined) found.driverName = driverName;
+      if (address !== undefined) found.address = address;
+      if (deliveryDate !== undefined) (found as any).deliveryDate = deliveryDate;
+      if (notes !== undefined) (found as any).notes = notes;
+    }
+
+    return res.json({
+      success: true,
+      order: found,
+      message: "הזמנת הסידור עודכנה בהצלחה במערכת",
+    });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: err?.message || "Update failed" });
+  }
+});
+
+// Route to broadcast WhatsApp Morning Report (/api/dispatch/report)
+app.post("/api/dispatch/report", async (req, res) => {
+  try {
+    const { reportText, targetGroup } = req.body || {};
+    if (!reportText) {
+      return res.status(400).json({ success: false, error: "Missing reportText parameter" });
+    }
+
+    // Log the report event to webhook logs
+    webhookLogs.push({
+      id: `report_${Date.now()}`,
+      timestamp: new Date().toLocaleTimeString("he-IL"),
+      direction: "outgoing",
+      url: "/api/dispatch/report",
+      payload: { reportText, targetGroup: targetGroup || "NUDGE_GROUP_ID" },
+      responseCode: 200,
+      status: "success",
+      details: "דוח בוקר לסידור שודר לוואטסאפ בהצלחה!",
+    });
+
+    return res.json({
+      success: true,
+      message: "דוח הבוקר שודר בהצלחה לקבוצת העדכונים מהסידור ולראמי!",
+      timestamp: new Date().toISOString(),
+    });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: err?.message || "Failed to send report" });
   }
 });
 

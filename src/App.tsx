@@ -54,8 +54,25 @@ export default function App() {
 
   // Poll server for live C:\ap94 listener events, staged orders & logs
   useEffect(() => {
+    // Initial fetch for all staged orders from Google Sheet
+    fetch('/api/orders/staged')
+      .then((res) => res.json())
+      .then((data) => {
+        if (data && Array.isArray(data.orders) && data.orders.length > 0) {
+          setStagedOrders(data.orders);
+        }
+      })
+      .catch(() => {});
+
     const interval = setInterval(async () => {
       try {
+        const stagedRes = await fetch('/api/orders/staged');
+        if (stagedRes.ok) {
+          const stagedData = await stagedRes.json();
+          if (stagedData.orders && Array.isArray(stagedData.orders) && stagedData.orders.length > 0) {
+            setStagedOrders(stagedData.orders);
+          }
+        }
         const eventsRes = await fetch('/api/listener/events');
         if (eventsRes.ok) {
           const eventsData = await eventsRes.json();

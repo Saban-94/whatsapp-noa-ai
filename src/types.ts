@@ -143,6 +143,8 @@ export interface NormalizedOrderItem {
   totalPrice?: number;
 }
 
+export type StagedOrderStatus = 'נקלט ב-SabanOS' | 'בטיפול לוגיסטי' | 'יצא לדרך' | 'סופק' | 'לא סופק' | 'APPROVED' | 'הושלם';
+
 export interface StagedOrder {
   id: string;
   orderNumber: string;
@@ -152,11 +154,25 @@ export interface StagedOrder {
   noaResponse: string;
   items: NormalizedOrderItem[];
   totalPrice: number;
-  status: 'נקלט ב-SabanOS' | 'בטיפול לוגיסטי' | 'יצא לדרך' | 'הושלם' | 'APPROVED';
+  status: StagedOrderStatus | string;
   driverName?: string;
   address?: string;
+  deliveryDate?: string;
+  notes?: string;
   sentToWhatsapp: boolean;
   createdAt: string;
+  // Google Sheet 'לוג_הזמנות_מערכת' columns
+  ingestionDate?: string; // תאריך קליטה
+  warehouse?: string; // מחסן
+  baleDeposit?: string; // פקדון בלות
+  palletDeposit?: string; // פקדון משטחים
+  result?: string; // תוצאה
+  verificationDate?: string; // תאריך אימות
+  deliveryTime?: string; // שעת אספקה
+  noaInsights?: string; // מסקנות נועה AI
+  routeVerification?: string; // אימות מסלול הובלה
+  syncStatus?: string; // סטטוס סנכרון
+  rawItemsText?: string; // פריטים בטקסט חופשי/גליון
 }
 
 export interface CustomerProfile {

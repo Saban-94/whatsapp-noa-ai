@@ -456,9 +456,9 @@ export const LogisticDictionaryTab: React.FC = () => {
 
         {/* Product Grid Table */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 max-h-[400px] overflow-y-auto pr-1">
-          {filteredProducts.map((prod) => (
+          {filteredProducts.map((prod, idx) => (
             <div
-              key={prod.sku}
+              key={`${prod.sku || 'sku'}-${idx}`}
               className="p-3 bg-[#111b21] border border-[#2a3942] hover:border-[#00a884]/40 rounded-xl space-y-2 transition-all group"
             >
               <div className="flex items-center justify-between">

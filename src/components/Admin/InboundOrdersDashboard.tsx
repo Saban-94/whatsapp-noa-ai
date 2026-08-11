@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { InboundInquiry } from '../../types';
+import { OrdersStagingTab } from './OrdersStagingTab';
 import {
   Bell,
   BellOff,
@@ -16,6 +17,8 @@ import {
   Send,
   Volume2,
   VolumeX,
+  Truck,
+  ListFilter,
 } from 'lucide-react';
 
 interface InboundOrdersDashboardProps {
@@ -25,6 +28,7 @@ interface InboundOrdersDashboardProps {
 export const InboundOrdersDashboard: React.FC<InboundOrdersDashboardProps> = ({
   darkTheme = true,
 }) => {
+  const [subView, setSubView] = useState<'inquiries' | 'staging'>('staging');
   const [inquiries, setInquiries] = useState<InboundInquiry[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [filter, setFilter] = useState<'all' | 'pending' | 'handled'>('pending');
@@ -232,7 +236,38 @@ export const InboundOrdersDashboard: React.FC<InboundOrdersDashboardProps> = ({
           </div>
         </div>
 
-        {/* Nudge Targets Info Banner */}
+        {/* Main Sub-Tab Switcher Navigation */}
+        <div className="flex items-center gap-2 bg-slate-800/90 p-1.5 rounded-2xl border border-slate-700 shadow-lg">
+          <button
+            onClick={() => setSubView('staging')}
+            className={`flex-1 py-3 px-4 rounded-xl text-xs font-extrabold flex items-center justify-center gap-2 transition-all cursor-pointer ${
+              subView === 'staging'
+                ? 'bg-gradient-to-r from-amber-500 to-amber-600 text-slate-950 shadow-md scale-[1.01]'
+                : 'text-slate-400 hover:text-white hover:bg-slate-700/50'
+            }`}
+          >
+            <Truck className="w-4 h-4" />
+            <span>🚚 לוח סידור - לוג הזמנות מערכת (SabanOS)</span>
+          </button>
+
+          <button
+            onClick={() => setSubView('inquiries')}
+            className={`flex-1 py-3 px-4 rounded-xl text-xs font-extrabold flex items-center justify-center gap-2 transition-all cursor-pointer ${
+              subView === 'inquiries'
+                ? 'bg-[#00a884] text-slate-950 shadow-md scale-[1.01]'
+                : 'text-slate-400 hover:text-white hover:bg-slate-700/50'
+            }`}
+          >
+            <MessageSquare className="w-4 h-4" />
+            <span>📋 פניות נכנסות בוואטסאפ ונודניק ({pendingCount})</span>
+          </button>
+        </div>
+
+        {subView === 'staging' ? (
+          <OrdersStagingTab />
+        ) : (
+          <>
+            {/* Nudge Targets Info Banner */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
           <div className="bg-slate-800/60 p-3.5 rounded-xl border border-slate-700/50 flex items-center space-x-3 space-x-reverse">
             <div className="p-2 bg-indigo-500/20 text-indigo-400 rounded-lg">
@@ -337,12 +372,12 @@ export const InboundOrdersDashboard: React.FC<InboundOrdersDashboardProps> = ({
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {filteredInquiries.map((inq) => {
+            {filteredInquiries.map((inq, idx) => {
               const isPending = inq.status === 'חדש';
 
               return (
                 <div
-                  key={inq.id}
+                  key={`${inq.id || 'inq'}-${idx}`}
                   className={`p-5 rounded-2xl border transition-all duration-200 flex flex-col justify-between space-y-4 shadow-lg ${
                     isPending
                       ? 'bg-slate-800/90 border-rose-500/50 shadow-rose-950/20'
@@ -443,6 +478,8 @@ export const InboundOrdersDashboard: React.FC<InboundOrdersDashboardProps> = ({
               );
             })}
           </div>
+        )}
+        </>
         )}
       </div>
     </div>
