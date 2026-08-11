@@ -23,6 +23,7 @@ import { ContactInfoModal } from './components/Chat/ContactInfoModal';
 import { AdminModal } from './components/Admin/AdminModal';
 import { SplashGateway } from './components/SplashGateway';
 import { PWAInstallPrompt } from './components/PWAInstallPrompt';
+import { PWAMobileInstaller } from './components/PWAMobileInstaller';
 import { MobileBottomNav } from './components/MobileBottomNav';
 import { WhatsAppMirror } from './pages/WhatsAppMirror';
 import { InboundOrdersDashboard } from './components/Admin/InboundOrdersDashboard';
@@ -47,6 +48,7 @@ export default function App() {
   const [isNewChatOpen, setIsNewChatOpen] = useState(false);
   const [isContactInfoOpen, setIsContactInfoOpen] = useState(false);
   const [isGatewayOpen, setIsGatewayOpen] = useState(true);
+  const [isPWAInstallerOpen, setIsPWAInstallerOpen] = useState(false);
   const [isTyping, setIsTyping] = useState(false);
   const [mobileShowChat, setMobileShowChat] = useState(false);
 
@@ -912,6 +914,7 @@ export default function App() {
               isMirrorActive={activeMainTab === 'whatsapp-mirror'}
               onOpenInboundDashboard={() => setActiveMainTab((prev) => (prev === 'inbound-dashboard' ? 'chat' : 'inbound-dashboard'))}
               isInboundDashboardActive={activeMainTab === 'inbound-dashboard'}
+              onOpenPWAInstaller={() => setIsPWAInstallerOpen(true)}
               pendingInquiriesCount={pendingInquiriesCount}
               darkTheme={settings.darkTheme}
             />
@@ -1043,6 +1046,12 @@ export default function App() {
         isOpen={isGatewayOpen}
         onClose={() => setIsGatewayOpen(false)}
         darkTheme={settings.darkTheme}
+      />
+
+      {/* MOBILE PWA INSTALLER & SOUND MODAL */}
+      <PWAMobileInstaller
+        isOpen={isPWAInstallerOpen}
+        onClose={() => setIsPWAInstallerOpen(false)}
       />
 
       {/* MOBILE BOTTOM NAVIGATION BAR */}

@@ -1,5 +1,6 @@
 /**
- * Notification & Sound Alert Service for Noa AI & SabanOS PWA
+ * Advanced Notification & Audio Alert Service for Noa AI & SabanOS Mobile PWA
+ * Optimized for Android, iOS Safari, Desktop Browsers & Vercel Deployments.
  */
 
 export interface NotificationOptions {
@@ -9,17 +10,38 @@ export interface NotificationOptions {
   tag?: string;
   data?: any;
   silent?: boolean;
-  soundType?: 'mobile' | 'desktop' | 'auto';
+  soundType?: 'mobile' | 'desktop' | 'ringtone' | 'auto';
 }
 
-// Detect Mobile Device
+// Device & OS Detectors
 export const isMobileDevice = (): boolean => {
   if (typeof window === 'undefined') return false;
   return /Mobi|Android|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
 };
 
-// Web Audio API Sound Generator for Mobile vs Desktop
+export const isIOSDevice = (): boolean => {
+  if (typeof window === 'undefined') return false;
+  return /iPhone|iPad|iPod/i.test(navigator.userAgent) || 
+    (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+};
+
+export const isAndroidDevice = (): boolean => {
+  if (typeof window === 'undefined') return false;
+  return /Android/i.test(navigator.userAgent);
+};
+
+export const isStandalonePWA = (): boolean => {
+  if (typeof window === 'undefined') return false;
+  return (
+    window.matchMedia('(display-mode: standalone)').matches ||
+    (window.navigator as any).standalone === true ||
+    document.referrer.includes('android-app://')
+  );
+};
+
+// Web Audio API Ringtone & Chime Sound Engine
 let audioCtx: AudioContext | null = null;
+let ringtoneInterval: NodeJS.Timeout | null = null;
 
 const getAudioContext = (): AudioContext | null => {
   if (typeof window === 'undefined') return null;
@@ -36,9 +58,20 @@ const getAudioContext = (): AudioContext | null => {
 };
 
 /**
- * Play distinct sound alert optimized for Mobile (double-chime ding) or Desktop (crisp radar alert)
+ * Trigger Haptic Vibration feedback on supported devices (Android)
  */
-export const playNotificationSound = (type: 'mobile' | 'desktop' | 'auto' = 'auto'): void => {
+export const triggerVibration = (pattern: number | number[] = [100, 50, 150]): void => {
+  if (typeof window !== 'undefined' && 'vibrate' in navigator) {
+    try {
+      navigator.vibrate(pattern);
+    } catch (e) {}
+  }
+};
+
+/**
+ * Play single chime alert (Mobile double-chime or Desktop radar sweep)
+ */
+export const playNotificationSound = (type: 'mobile' | 'desktop' | 'ringtone' | 'auto' = 'auto'): void => {
   try {
     const ctx = getAudioContext();
     if (!ctx) return;
@@ -46,38 +79,40 @@ export const playNotificationSound = (type: 'mobile' | 'desktop' | 'auto' = 'aut
     const actualType = type === 'auto' ? (isMobileDevice() ? 'mobile' : 'desktop') : type;
 
     if (actualType === 'mobile') {
-      // Mobile Double-Chime Ding (High pitch, fast attack & decay for small speakers)
+      // Mobile Double-Chime Ding (A5 -> D6)
       const now = ctx.currentTime;
       
-      // Tone 1: A5 (880 Hz)
       const osc1 = ctx.createOscillator();
       const gain1 = ctx.createGain();
       osc1.type = 'sine';
       osc1.frequency.setValueAtTime(880, now);
-      gain1.gain.setValueAtTime(0.3, now);
+      gain1.gain.setValueAtTime(0.35, now);
       gain1.gain.exponentialRampToValueAtTime(0.001, now + 0.12);
       osc1.connect(gain1);
       gain1.connect(ctx.destination);
       osc1.start(now);
       osc1.stop(now + 0.12);
 
-      // Tone 2: D6 (1174.66 Hz)
       const osc2 = ctx.createOscillator();
       const gain2 = ctx.createGain();
       osc2.type = 'triangle';
       osc2.frequency.setValueAtTime(1174.66, now + 0.1);
-      gain2.gain.setValueAtTime(0.4, now + 0.1);
-      gain2.gain.exponentialRampToValueAtTime(0.001, now + 0.3);
+      gain2.gain.setValueAtTime(0.45, now + 0.1);
+      gain2.gain.exponentialRampToValueAtTime(0.001, now + 0.32);
       osc2.connect(gain2);
       gain2.connect(ctx.destination);
       osc2.start(now + 0.1);
-      osc2.stop(now + 0.3);
+      osc2.stop(now + 0.32);
 
+      triggerVibration([80, 40, 120]);
+
+    } else if (actualType === 'ringtone') {
+      // Phone Ringtone Pattern Sequence
+      playIncomingOrderRingtoneOnce();
     } else {
-      // Desktop Crisp Radar Alert (Harmonic tri-tone chord sweep: C5 -> E5 -> G5)
+      // Desktop Crisp Tri-Tone Radar Chord Sweep (C5 -> E5 -> G5)
       const now = ctx.currentTime;
-
-      const freqs = [523.25, 659.25, 783.99]; // C5, E5, G5
+      const freqs = [523.25, 659.25, 783.99];
       freqs.forEach((freq, idx) => {
         const osc = ctx.createOscillator();
         const gain = ctx.createGain();
@@ -95,7 +130,62 @@ export const playNotificationSound = (type: 'mobile' | 'desktop' | 'auto' = 'aut
       });
     }
   } catch (err) {
-    console.warn('[NotificationService] Audio playback error:', err);
+    console.warn('[NotificationService] Audio play error:', err);
+  }
+};
+
+/**
+ * Single sequence ringtone burst for incoming orders
+ */
+const playIncomingOrderRingtoneOnce = (): void => {
+  const ctx = getAudioContext();
+  if (!ctx) return;
+
+  const now = ctx.currentTime;
+  const notes = [
+    { freq: 880, delay: 0.0, duration: 0.15 },
+    { freq: 1108.73, delay: 0.15, duration: 0.15 },
+    { freq: 1318.51, delay: 0.30, duration: 0.25 },
+    { freq: 1760, delay: 0.60, duration: 0.35 },
+  ];
+
+  notes.forEach((note) => {
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    const startTime = now + note.delay;
+
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(note.freq, startTime);
+    gain.gain.setValueAtTime(0.3, startTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, startTime + note.duration);
+
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start(startTime);
+    osc.stop(startTime + note.duration);
+  });
+
+  triggerVibration([200, 100, 200, 100, 300]);
+};
+
+/**
+ * Start continuous incoming call/order ringtone alert loop
+ */
+export const startRingtoneLoop = (): void => {
+  stopRingtoneLoop();
+  playIncomingOrderRingtoneOnce();
+  ringtoneInterval = setInterval(() => {
+    playIncomingOrderRingtoneOnce();
+  }, 2200);
+};
+
+/**
+ * Stop continuous ringtone alert loop
+ */
+export const stopRingtoneLoop = (): void => {
+  if (ringtoneInterval) {
+    clearInterval(ringtoneInterval);
+    ringtoneInterval = null;
   }
 };
 
@@ -104,7 +194,7 @@ export const playNotificationSound = (type: 'mobile' | 'desktop' | 'auto' = 'aut
  */
 export const requestNotificationPermission = async (): Promise<NotificationPermission> => {
   if (typeof window === 'undefined' || !('Notification' in window)) {
-    console.warn('[NotificationService] Web Notifications not supported');
+    console.warn('[NotificationService] Web Notifications not supported in this environment');
     return 'denied';
   }
 
@@ -116,13 +206,13 @@ export const requestNotificationPermission = async (): Promise<NotificationPermi
     const permission = await Notification.requestPermission();
     return permission;
   } catch (err) {
-    console.error('[NotificationService] Error requesting permission:', err);
+    console.error('[NotificationService] Error requesting notification permission:', err);
     return 'denied';
   }
 };
 
 /**
- * Check Notification Permission Status
+ * Check Notification Permission State
  */
 export const getNotificationPermissionState = (): NotificationPermission => {
   if (typeof window === 'undefined' || !('Notification' in window)) {
@@ -148,7 +238,6 @@ export const sendNotification = async (
     soundType = 'auto',
   } = options;
 
-  // Play audio alert first if not silent
   if (!silent) {
     playNotificationSound(soundType);
   }
@@ -158,12 +247,10 @@ export const sendNotification = async (
   }
 
   if (Notification.permission !== 'granted') {
-    console.log('[NotificationService] Notification permission not granted');
     return false;
   }
 
   try {
-    // Try Service Worker registration showNotification first for PWA consistency
     if ('serviceWorker' in navigator) {
       const registration = await navigator.serviceWorker.getRegistration();
       if (registration && registration.active) {
@@ -181,7 +268,6 @@ export const sendNotification = async (
       }
     }
 
-    // Fallback to standard window Notification constructor
     const notification = new Notification(title, {
       body,
       icon,
@@ -211,28 +297,6 @@ export const notifyIncomingOrder = (contactName: string, orderDetails: string): 
   sendNotification(`הזמנה חדשה התקבלה מ-${contactName} 🚛`, {
     body: orderDetails,
     tag: 'order-incoming',
-    soundType: 'auto',
-  });
-};
-
-/**
- * Helper to notify on human operator intervention needed
- */
-export const notifyHumanIntervention = (contactName: string, reason: string): void => {
-  sendNotification(`⚠️ נדרשת התערבות אנושית: ${contactName}`, {
-    body: reason,
-    tag: 'human-intervention',
-    soundType: 'auto',
-  });
-};
-
-/**
- * Helper to notify on system exception or webhook failure
- */
-export const notifySystemLogException = (source: string, errorMsg: string): void => {
-  sendNotification(`🚨 שגיאת ניטור מערכת (${source})`, {
-    body: errorMsg,
-    tag: 'system-log-error',
-    soundType: 'auto',
+    soundType: 'ringtone',
   });
 };

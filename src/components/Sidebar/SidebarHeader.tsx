@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { MessageSquarePlus, MoreVertical, CircleDashed, Shield, UserPlus, DoorOpen, Radio } from 'lucide-react';
+import { MessageSquarePlus, MoreVertical, CircleDashed, Shield, UserPlus, DoorOpen, Radio, Smartphone, Bell } from 'lucide-react';
 
 interface SidebarHeaderProps {
   onOpenAdmin: () => void;
@@ -9,6 +9,7 @@ interface SidebarHeaderProps {
   isMirrorActive?: boolean;
   onOpenInboundDashboard?: () => void;
   isInboundDashboardActive?: boolean;
+  onOpenPWAInstaller?: () => void;
   pendingInquiriesCount?: number;
   darkTheme: boolean;
 }
@@ -21,6 +22,7 @@ export const SidebarHeader: React.FC<SidebarHeaderProps> = ({
   isMirrorActive = false,
   onOpenInboundDashboard,
   isInboundDashboardActive = false,
+  onOpenPWAInstaller,
   pendingInquiriesCount = 0,
   darkTheme,
 }) => {
@@ -102,6 +104,18 @@ export const SidebarHeader: React.FC<SidebarHeaderProps> = ({
 
       {/* Action Icons */}
       <div className="flex items-center gap-1 text-[#aebac1]">
+        {/* PWA Mobile & Notification Button */}
+        {onOpenPWAInstaller && (
+          <button
+            onClick={onOpenPWAInstaller}
+            className="p-1.5 rounded-full hover:bg-[#374248]/50 transition-colors text-[#38bdf8] relative group"
+            title="התקנה למובייל (PWA), התראות וצלצול"
+          >
+            <Smartphone className="w-4 h-4 group-hover:scale-110 transition-transform" />
+            <span className="absolute -top-0.5 -right-0.5 w-2 h-2 bg-[#38bdf8] rounded-full animate-ping" />
+          </button>
+        )}
+
         {/* Gateway Splash Door Button */}
         {onOpenGateway && (
           <button
