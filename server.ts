@@ -1577,6 +1577,27 @@ app.post("/api/dispatch/update", async (req, res) => {
       if (address !== undefined) found.address = address;
       if (deliveryDate !== undefined) (found as any).deliveryDate = deliveryDate;
       if (notes !== undefined) (found as any).notes = notes;
+
+      // Broadcast update into dispatchChatUpdates
+      const orderNum = found.orderNumber || String(targetId);
+      const newUpdate = {
+        id: `update_${orderNum}_${Date.now()}`,
+        orderNumber: orderNum,
+        customerName: found.customerName || "לקוח",
+        customerPhone: found.customerPhone || "050-0000000",
+        address: found.address || "כתובת אספקה",
+        driverName: found.driverName || "טרם שובץ",
+        status: found.status || status || "מאושר",
+        updateType: "STATUS_CHANGE",
+        title: `⚡ עדכון סטטוס הובלה - הזמנה #${orderNum}`,
+        formattedMessageText: `*עדכון סטטוס בסידור - SabanOS*\n📦 *הזמנה #${orderNum}*\n👤 *לקוח:* ${found.customerName || "לקוח"}\n📍 *כתובת:* ${found.address || "כתובת"}\n🚚 *שיוך נהג:* ${found.driverName || "טרם שובץ"}\n⚡ *סטטוס חדש:* ${found.status}\n⏰ *זמן עדכון:* ${new Date().toLocaleTimeString("he-IL", { hour: "2-digit", minute: "2-digit" })}`,
+        timestamp: new Date().toLocaleTimeString("he-IL", { hour: "2-digit", minute: "2-digit" }),
+        createdAt: new Date().toISOString(),
+        isUnread: true,
+        viewCount: 0,
+        viewLogs: []
+      };
+      dispatchChatUpdates.unshift(newUpdate);
     }
 
     return res.json({
@@ -1587,6 +1608,274 @@ app.post("/api/dispatch/update", async (req, res) => {
   } catch (err: any) {
     return res.status(500).json({ success: false, error: err?.message || "Update failed" });
   }
+});
+
+// In-Memory Storage for Dispatch Chat Updates & Mobile View Audit Logs
+let dispatchChatUpdates: any[] = [
+  {
+    id: "update_6214848_1",
+    orderNumber: "6214848",
+    customerName: "א.ערן אזולאי",
+    customerPhone: "050-8899112",
+    address: "נח 3, תל אביב",
+    driverName: "עלי - משאית 01 (מנוף)",
+    status: "יצא לדרך",
+    updateType: "STATUS_CHANGE",
+    title: "🚚 עדכון יציאה להובלה - הזמנה #6214848",
+    formattedMessageText: "*עדכון מסידור עבודה - SabanOS*\n📦 *הזמנה #6214848*\n👤 *לקוח:* א.ערן אזולאי\n📍 *כתובת:* נח 3, תל אביב\n🚚 *שיוך נהג:* עלי - משאית 01 (מנוף)\n⚡ *סטטוס:* יצא לדרך 🚚\n⏰ *שעת יציאה:* 08:30",
+    timestamp: "08:30",
+    createdAt: new Date().toISOString(),
+    isUnread: true,
+    viewCount: 4,
+    lastViewedBy: "נהג עלי (iPhone 15 Pro)",
+    viewLogs: [
+      {
+        id: "log_1",
+        viewedAt: "08:32:15",
+        deviceOwner: "נהג עלי",
+        deviceModel: "iPhone 15 Pro",
+        osType: "iOS",
+        browser: "Safari Mobile 17.4",
+        ip: "185.175.241.12",
+        isMobile: true
+      },
+      {
+        id: "log_2",
+        viewedAt: "08:35:40",
+        deviceOwner: "חכמת - סמארטפון",
+        deviceModel: "Samsung Galaxy S24 Ultra",
+        osType: "Android",
+        browser: "Chrome Mobile 122.0",
+        ip: "82.166.19.45",
+        isMobile: true
+      },
+      {
+        id: "log_3",
+        viewedAt: "08:41:02",
+        deviceOwner: "מחשב משרד - מנהל",
+        deviceModel: "Desktop Windows PC",
+        osType: "Windows",
+        browser: "Chrome 123.0",
+        ip: "109.64.12.88",
+        isMobile: false
+      }
+    ]
+  },
+  {
+    id: "update_6214826_1",
+    orderNumber: "6214826",
+    customerName: "עופר כץ",
+    customerPhone: "052-4455667",
+    address: "רחוב בית העם 3, רמות השבים",
+    driverName: "חכמת - משאית 02",
+    status: "מאושר",
+    updateType: "NEW_ORDER",
+    title: "🆕 הזמנה חדשה נקלטה בסידור - #6214826",
+    formattedMessageText: "*נקלטה הזמנה חדשה מ-Google Sheets*\n📦 *מספר הזמנה:* #6214826\n👤 *לקוח:* עופר כץ\n📍 *יעד אספקה:* רחוב בית העם 3, רמות השבים\n🚚 *נהג משויך:* חכמת - משאית 02\n💰 *סכום:* ₪1,850\n🟢 *סטטוס:* מאושר ב-SabanOS",
+    timestamp: "07:47",
+    createdAt: new Date(Date.now() - 3600000).toISOString(),
+    isUnread: true,
+    viewCount: 2,
+    lastViewedBy: "מנהל עבודה (Samsung S23)",
+    viewLogs: [
+      {
+        id: "log_4",
+        viewedAt: "07:50:11",
+        deviceOwner: "מנהל עבודה",
+        deviceModel: "Samsung Galaxy S23",
+        osType: "Android",
+        browser: "Chrome Mobile 121.0",
+        ip: "82.166.19.45",
+        isMobile: true
+      }
+    ]
+  },
+  {
+    id: "update_6214582_1",
+    orderNumber: "6214582",
+    customerName: "וגשל דאו(519205)",
+    customerPhone: "050-1234567",
+    address: "בורוכוב 28, תל אביב",
+    driverName: "עלי - משאית 01 (מנוף)",
+    status: "סופק",
+    updateType: "STATUS_CHANGE",
+    title: "✅ הובלה הושלמה וסופקה - הזמנה #6214582",
+    formattedMessageText: "*הודעת סיום הובלה*\n📦 *הזמנה #6214582*\n👤 *לקוח:* וגשל דאו\n📍 *כתובת:* בורוכוב 28, תל אביב\n✅ *סטטוס חדש:* סופק במלואו על פי תעודת משלוח\n📸 *תעודה וצילום פריקה:* מאומת בשיטס",
+    timestamp: "06:15",
+    createdAt: new Date(Date.now() - 7200000).toISOString(),
+    isUnread: false,
+    viewCount: 6,
+    lastViewedBy: "סמארטפון נהג (iPhone 14 Pro)",
+    viewLogs: [
+      {
+        id: "log_5",
+        viewedAt: "06:20:00",
+        deviceOwner: "סמארטפון נהג",
+        deviceModel: "iPhone 14 Pro",
+        osType: "iOS",
+        browser: "Safari Mobile 17.2",
+        ip: "185.175.241.12",
+        isMobile: true
+      }
+    ]
+  }
+];
+
+// GET /api/dispatch/chat-updates - Return chat update cards feed
+app.get("/api/dispatch/chat-updates", (req, res) => {
+  const unreadCount = dispatchChatUpdates.filter((u) => u.isUnread).length;
+  res.json({
+    success: true,
+    unreadCount,
+    totalUpdates: dispatchChatUpdates.length,
+    updates: dispatchChatUpdates,
+  });
+});
+
+// POST /api/dispatch/chat-updates - Add or broadcast a new order update card
+app.post("/api/dispatch/chat-updates", (req, res) => {
+  try {
+    const body = req.body || {};
+    const { orderNumber, customerName, address, driverName, status, updateType, customText } = body;
+
+    const newUpdate = {
+      id: `update_${orderNumber || Date.now()}_${Date.now()}`,
+      orderNumber: orderNumber || `ORD-${Math.floor(1000 + Math.random() * 9000)}`,
+      customerName: customerName || "לקוח",
+      customerPhone: body.customerPhone || "050-0000000",
+      address: address || "כתובת אספקה",
+      driverName: driverName || "טרם שובץ (להקצאה)",
+      status: status || "מאושר",
+      updateType: updateType || "STATUS_CHANGE",
+      title: updateType === "NEW_ORDER" ? `🆕 הזמנה חדשה נקלטה בסידור - #${orderNumber}` : `⚡ עדכון סטטוס הובלה - #${orderNumber}`,
+      formattedMessageText: customText || `*עדכון סידור עבודה - SabanOS*\n📦 *הזמנה #${orderNumber}*\n👤 *לקוח:* ${customerName}\n📍 *כתובת:* ${address}\n🚚 *נהג:* ${driverName}\n⚡ *סטטוס:* ${status}`,
+      timestamp: new Date().toLocaleTimeString("he-IL", { hour: "2-digit", minute: "2-digit" }),
+      createdAt: new Date().toISOString(),
+      isUnread: true,
+      viewCount: 0,
+      viewLogs: []
+    };
+
+    dispatchChatUpdates.unshift(newUpdate);
+
+    return res.json({
+      success: true,
+      update: newUpdate,
+      unreadCount: dispatchChatUpdates.filter((u) => u.isUnread).length,
+      message: "העדכון התווסף בהצלחה ללשונית עדכוני סידור"
+    });
+  } catch (e: any) {
+    return res.status(500).json({ success: false, error: e?.message || "Failed to post update" });
+  }
+});
+
+// POST /api/dispatch/read-receipt - Mark updates as read and log mobile device info
+app.post("/api/dispatch/read-receipt", (req, res) => {
+  try {
+    const { updateId, userAgent, deviceOwner, screenWidth } = req.body || {};
+    
+    // Parse device from User Agent string
+    const ua = userAgent || req.headers["user-agent"] || "";
+    let deviceModel = "Windows Desktop PC";
+    let osType = "Windows";
+    let browser = "Chrome";
+    let isMobile = false;
+
+    if (/iPhone/i.test(ua)) {
+      deviceModel = "iPhone 15 / iOS";
+      osType = "iOS";
+      browser = "Safari Mobile";
+      isMobile = true;
+    } else if (/iPad/i.test(ua)) {
+      deviceModel = "iPad / iOS";
+      osType = "iOS";
+      browser = "Safari Mobile";
+      isMobile = true;
+    } else if (/Android/i.test(ua)) {
+      if (/Samsung/i.test(ua) || /SM-/i.test(ua)) {
+        deviceModel = "Samsung Galaxy (Android)";
+      } else {
+        deviceModel = "Android Smartphone";
+      }
+      osType = "Android";
+      browser = "Chrome Mobile";
+      isMobile = true;
+    } else if (/Macintosh/i.test(ua)) {
+      deviceModel = "MacBook / macOS";
+      osType = "macOS";
+      browser = "Safari Desktop";
+    }
+
+    const timeStr = new Date().toLocaleTimeString("he-IL", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+    const ip = req.ip || req.socket.remoteAddress || "185.175.241.12";
+
+    const newLog = {
+      id: `vlog_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+      viewedAt: timeStr,
+      deviceOwner: deviceOwner || (isMobile ? "נייד נהג / קבלן" : "מנהל מערכת משרד"),
+      deviceModel,
+      osType,
+      browser,
+      ip,
+      isMobile
+    };
+
+    if (updateId) {
+      const item = dispatchChatUpdates.find((u) => u.id === updateId);
+      if (item) {
+        item.isUnread = false;
+        item.viewCount = (item.viewCount || 0) + 1;
+        item.lastViewedBy = `${newLog.deviceOwner} (${deviceModel})`;
+        if (!item.viewLogs) item.viewLogs = [];
+        item.viewLogs.unshift(newLog);
+      }
+    } else {
+      // Mark all as read
+      dispatchChatUpdates.forEach((u) => {
+        u.isUnread = false;
+        u.viewCount = (u.viewCount || 0) + 1;
+        u.lastViewedBy = `${newLog.deviceOwner} (${deviceModel})`;
+        if (!u.viewLogs) u.viewLogs = [];
+        u.viewLogs.unshift(newLog);
+      });
+    }
+
+    const unreadCount = dispatchChatUpdates.filter((u) => u.isUnread).length;
+
+    return res.json({
+      success: true,
+      unreadCount,
+      logRecorded: newLog,
+      message: "אישור קריאה וזיהוי מכשיר נרשמו בהצלחה"
+    });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: err?.message || "Failed to log read receipt" });
+  }
+});
+
+// GET /api/dispatch/view-logs - Admin-only device view audit log
+app.get("/api/dispatch/view-logs", (req, res) => {
+  const allLogs: any[] = [];
+  dispatchChatUpdates.forEach((upd) => {
+    if (Array.isArray(upd.viewLogs)) {
+      upd.viewLogs.forEach((vl: any) => {
+        allLogs.push({
+          ...vl,
+          orderNumber: upd.orderNumber,
+          customerName: upd.customerName,
+          updateTitle: upd.title
+        });
+      });
+    }
+  });
+
+  res.json({
+    success: true,
+    adminOnly: true,
+    totalViews: allLogs.length,
+    updatesCount: dispatchChatUpdates.length,
+    logs: allLogs
+  });
 });
 
 // Route to broadcast WhatsApp Morning Report (/api/dispatch/report)

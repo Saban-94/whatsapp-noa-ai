@@ -40,6 +40,7 @@ import { FormattedMessage } from '../Chat/FormattedMessage';
 import { playWhatsAppIncomingSound } from '../../utils/audio';
 import { LogisticDictionaryTab } from './LogisticDictionaryTab';
 import { OrdersStagingTab } from './OrdersStagingTab';
+import { DispatchChatUpdatesTab } from './DispatchChatUpdatesTab';
 
 interface AdminModalProps {
   isOpen: boolean;
@@ -76,7 +77,7 @@ export const AdminModal: React.FC<AdminModalProps> = ({
   onResetData,
   onRunAutoArchive,
 }) => {
-  const [activeTab, setActiveTab] = useState<'kpi' | 'crm' | 'prompt' | 'quick_replies' | 'hours' | 'webhook' | 'settings' | 'logistic_dict' | 'orders_staging'>('orders_staging');
+  const [activeTab, setActiveTab] = useState<'dispatch_chat_updates' | 'orders_staging' | 'kpi' | 'crm' | 'prompt' | 'quick_replies' | 'hours' | 'webhook' | 'settings' | 'logistic_dict'>('dispatch_chat_updates');
 
   const [selectedCrmChatId, setSelectedCrmChatId] = useState<string>(chats[0]?.id || '');
   const [overrideText, setOverrideText] = useState('');
@@ -335,6 +336,21 @@ export const AdminModal: React.FC<AdminModalProps> = ({
           </button>
 
           <button
+            onClick={() => setActiveTab('dispatch_chat_updates')}
+            className={`px-4 py-3 text-xs font-semibold flex items-center gap-2 border-b-2 transition-colors relative ${
+              activeTab === 'dispatch_chat_updates'
+                ? 'border-[#00a884] text-[#00a884]'
+                : 'border-transparent text-[#8696a0] hover:text-[#e9edef]'
+            }`}
+          >
+            <MessageSquare className="w-4 h-4 text-emerald-400" />
+            <span>עדכונים מהסידור (WhatsApp Feed)</span>
+            <span className="bg-emerald-500 text-slate-950 font-black text-[9px] px-1.5 py-0.2 rounded-full animate-pulse">
+              חדש!
+            </span>
+          </button>
+
+          <button
             onClick={() => setActiveTab('orders_staging')}
             className={`px-4 py-3 text-xs font-semibold flex items-center gap-2 border-b-2 transition-colors ${
               activeTab === 'orders_staging'
@@ -374,6 +390,14 @@ export const AdminModal: React.FC<AdminModalProps> = ({
         {/* Tab Body Content */}
         <div className="flex-1 overflow-y-auto p-6 space-y-6">
           
+          {/* TAB: Dispatch Chat Updates Feed (עדכונים מהסידור - WhatsApp Feed) */}
+          {activeTab === 'dispatch_chat_updates' && (
+            <DispatchChatUpdatesTab
+              stagedOrders={stagedOrders}
+              onUpdateOrderStatus={onUpdateOrderStatus}
+            />
+          )}
+
           {/* TAB: Orders Staging Table (הזמנות_סידור) */}
           {activeTab === 'orders_staging' && (
             <OrdersStagingTab
