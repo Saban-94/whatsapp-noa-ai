@@ -2,6 +2,7 @@
   "name": "noa-whatsapp-listener-server",
   "version": "1.0.0",
   "description": "Production-Grade 24/7 Local WhatsApp Listener & Responder Server for SabanOS / Noa AI",
+  "type": "module",
   "main": "index.js",
   "scripts": {
     "start": "node index.js",

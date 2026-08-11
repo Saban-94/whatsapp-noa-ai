@@ -1,12 +1,10 @@
 import express from "express";
 import path from "path";
+import fs from "fs";
 import { GoogleGenAI } from "@google/genai";
-import { createRequire } from "module";
+import noaBrainModule, { SABAN_MASTER_INVENTORY } from "./noaBrain.js";
 
-const require = createRequire(import.meta.url);
-const noaBrainModule = require("./noaBrain.js");
-
-const masterInventoryList = (noaBrainModule && noaBrainModule.SABAN_MASTER_INVENTORY) || [];
+const masterInventoryList = SABAN_MASTER_INVENTORY || (noaBrainModule && noaBrainModule.SABAN_MASTER_INVENTORY) || [];
 
 const app = express();
 const PORT = 3000;
@@ -2039,7 +2037,6 @@ ${formattedHistoryText || "אין הודעות קודמות מפורטות, הל
 
 app.get("/api/script/code-js", (req, res) => {
   try {
-    const fs = require("fs");
     const codePath = path.join(process.cwd(), "Code.js");
     const codeText = fs.readFileSync(codePath, "utf-8");
     res.json({ success: true, code: codeText });

@@ -652,8 +652,13 @@ function processInboundMessage(userMessage, options = {}) {
   const msgText = (userMessage || "").toString().trim();
   const lowerMsg = msgText.toLowerCase();
 
-  const simpleGreetings = ["היי", "שלום", "אהלן", "בוקר טוב", "ערב טוב", "צהריים טובים", "מה שלומך", "היוש"];
-  const isExactGreeting = simpleGreetings.some(g => lowerMsg === g || lowerMsg === g + "!" || lowerMsg === g + " נועה");
+  const simpleGreetings = [
+    "היי", "הי", "שלום", "אהלן", "בוקר טוב", "ערב טוב", "צהריים טובים", "לילה טוב",
+    "מה שלומך", "היוש", "מה נשמע", "מה קורה", "מה העניינים", "נועה"
+  ];
+  const isExactGreeting = 
+    simpleGreetings.some(g => lowerMsg === g || lowerMsg === g + "!" || lowerMsg === g + " נועה" || lowerMsg === "הי " + g || lowerMsg === "היי " + g) ||
+    /^(היי?|שלום|אהלן|בוקר טוב|ערב טוב|צהריים טובים|מה שלומך|היוש|מה נשמע|מה קורה|מה העניינים)(\s+נועה)?[\s!.]*$/i.test(msgText);
 
   if (isExactGreeting) {
     return {
@@ -715,15 +720,17 @@ const noaBrainModule = {
   processInboundMessage
 };
 
-module.exports = noaBrainModule;
-module.exports.default = noaBrainModule;
-module.exports.SABAN_MASTER_INVENTORY = SABAN_MASTER_INVENTORY;
-module.exports.SYSTEM_SHEET_COLUMNS = SYSTEM_SHEET_COLUMNS;
-module.exports.LOGISTICS_DICTIONARY = LOGISTICS_DICTIONARY;
-module.exports.parseLogisticsOrder = parseLogisticsOrder;
-module.exports.evaluateRules = evaluateRules;
-module.exports.buildGeminiPayload = buildGeminiPayload;
-module.exports.processInboundMessage = processInboundMessage;
+export {
+  SABAN_MASTER_INVENTORY,
+  SYSTEM_SHEET_COLUMNS,
+  LOGISTICS_DICTIONARY,
+  parseLogisticsOrder,
+  evaluateRules,
+  buildGeminiPayload,
+  processInboundMessage
+};
+
+export default noaBrainModule;
 
 if (typeof window !== 'undefined') {
   window.noaBrain = noaBrainModule;

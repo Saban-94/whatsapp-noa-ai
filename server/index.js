@@ -25,12 +25,13 @@
  * ==============================================================================
  */
 
-require('dotenv').config();
-const express = require('express');
-const axios = require('axios');
-const qrcode = require('qrcode-terminal');
-const { Client, LocalAuth } = require('whatsapp-web.js');
-const noaBrain = require('../noaBrain.js');
+import 'dotenv/config';
+import express from 'express';
+import axios from 'axios';
+import qrcode from 'qrcode-terminal';
+import pkg from 'whatsapp-web.js';
+const { Client, LocalAuth } = pkg;
+import noaBrain from './noaBrain.js';
 
 // ==============================================================================
 // 1. הגדרות סביבה ומשתנים גלובליים
@@ -222,7 +223,7 @@ client.on('message', async (msg) => {
         } else {
           generatedReply = brainRes.text;
         }
-      } else if (/^(היי|שלום|אהלן|בוקר טוב|ערב טוב|מה נשמע)/i.test(incomingMessage) && incomingMessage.length < 20) {
+      } else if (/^(היי?|שלום|אהלן|בוקר טוב|ערב טוב|צהריים טובים|מה נשמע|מה קורה)(\s+נועה)?[\s!.]*$/i.test(incomingMessage) || (incomingMessage.length < 20 && /^(היי?|שלום|אהלן)/i.test(incomingMessage))) {
         generatedReply = `היי *${senderName}*! 👋 במה אוכל לעזור לך היום בח. סבן?`;
       } else if (isGroup) {
         generatedReply = `אהלן *${senderName}*, קיבלנו את ההודעה בקבוצה והיא בטיפול בסידור הובלות! 🚛`;
