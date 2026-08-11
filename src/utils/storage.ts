@@ -49,7 +49,7 @@ export function loadStoredSettings(): AdminSettings {
       if (!parsed.quickReplies || parsed.quickReplies.length === 0) {
         parsed.quickReplies = DEFAULT_QUICK_REPLIES;
       }
-      if (!parsed.webAppUrl || parsed.webAppUrl.includes('AKfycbwvTGiE1h1AR9csbFhVQczFbOpHVXpyQN6MlIQX1NykSvJnjfi6_zipZOj76xnPqfk')) {
+      if (!parsed.webAppUrl || !parsed.webAppUrl.includes('AKfycbxjs19kSI1zgpLuMd64aUcfVlKXfVE3_dBShrDfRbExy2fUXkmdhVzna28P3GnIrW4o')) {
         parsed.webAppUrl = INITIAL_SETTINGS.webAppUrl;
       }
       return parsed;

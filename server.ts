@@ -15,7 +15,7 @@ let serverSettings = {
 1. חוק הפרופורציונליות (Proportionality Rule): התאם את אורך התגובה בדיוק לאורך הודעת הלקוח! אם הלקוח שולח ברכה פשוטה ("היי", "שלום", "אהלן", "בוקר טוב"), השב בברכה אנושית, קצרה וחמה בלבד (משפט 1 או 2 max). אל תפרט היסטוריית הזמנות, אל תציג סיכומי עבר ואל תשלח תבניות ארוכות אלא אם הלקוח ביקש זאת במפורש.
 2. טון דיבור אנושי וקולגיאלי (Conversational Tone): דבר כמו קולגה חדה, יציבה ועוזרת בצוות 'ח. סבן'. הימנע מניסוחים רובוטיים, תבניות קשיחות, חתימות אוטומטיות נפוחות, או טקסטים גנריים של בוט.
 3. פשטות ובהירות (Simplicity): שמור על תשובות נקיות, קצרות (1-2 משפטים לפנייה ראשונית/פשוטה), בעברית יומיומית, פשוטה וטבעית.`,
-  webAppUrl: "https://script.google.com/macros/s/AKfycbyQUaDDWSiG6osVHQ8ZQEdXqVNBFFoaFcLxr6iJvJYZpsc8TSfQ_wjvc5HMtKyLsyG80A/exec",
+  webAppUrl: "https://script.google.com/macros/s/AKfycbxjs19kSI1zgpLuMd64aUcfVlKXfVE3_dBShrDfRbExy2fUXkmdhVzna28P3GnIrW4o/exec",
   webhookSyncEnabled: true,
   activeModel: "gemini-3.6-flash",
   autoReplyEnabled: true,
@@ -227,6 +227,172 @@ app.post("/api/webhook/google-script", async (req, res) => {
       status: 500,
       error: error?.message || "Failed to reach Web App endpoint",
       log: logEntry,
+    });
+  }
+});
+
+// Google Sheets Generic Tab API - Get list of spreadsheet tabs
+app.get("/api/sheets/tabs", (req, res) => {
+  const tabs = [
+    { id: "dashboard", name: "דשבורד_לוגיסטי", description: "דשבורד מנהלים ראשי וסיכום מדדים" },
+    { id: "orders_log", name: "לוג_הזמנות_מערכת", description: "לוג הזמנות מערכת מלא כולל פקדונות ואימות" },
+    { id: "inventory", name: "מלאי_מוצרים", description: "מלאי מוצרים, מחירים וספקים" },
+    { id: "customers", name: "תיק_לקוח_וחשבונות", description: "תיקי לקוחות, חשבונות ואנשי קשר" },
+    { id: "work_order", name: "הזמנות_סידור", description: "הזמנות סידור עבודה ונהגים" },
+    { id: "dictionary", name: "מילון_לוגיסטי", description: "מילון מוצרים, מק״טים וכינויים" },
+    { id: "cities", name: "ערים", description: "מרחקים וזמני נסיעה לערים" },
+    { id: "exceptions", name: "חריגות_לוגיסטיות", description: "חריגות לוגיסטיות ופקדונות" },
+    { id: "system_logs", name: "חריגות_ולוגים", description: "תיעוד לוגים ותקלות מערכת" },
+    { id: "whatsapp_inbound", name: "WhatsApp_Inbound", description: "הודעות נכנסות מ-WhatsApp" },
+    { id: "noa_rules", name: "הגדרות_מענה_נועה", description: "חוקים והגדרות מענה אוטומטי נועה AI" },
+    { id: "sys_settings", name: "הגדרות_מערכת", description: "הגדרות מערכת גלובליות" },
+  ];
+
+  res.json({
+    success: true,
+    webAppUrl: serverSettings.webAppUrl,
+    tabsCount: tabs.length,
+    tabs,
+    timestamp: new Date().toISOString(),
+  });
+});
+
+// Read Data from any Google Sheets Tab
+app.all("/api/sheets/read-tab", async (req, res) => {
+  try {
+    const tabName = req.query.tab || req.body?.tab || req.query.name || req.body?.name || "לוג_הזמנות_מערכת";
+    const targetUrl = serverSettings.webAppUrl;
+
+    if (!targetUrl) {
+      return res.status(400).json({ success: false, error: "כתובת WebApp של גוגל שייץ אינה מוגדרת" });
+    }
+
+    const payload = {
+      action: "read_tab",
+      tabName: String(tabName),
+      tab: String(tabName),
+      timestamp: new Date().toISOString(),
+    };
+
+    const response = await fetch(targetUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+
+    if (response.ok) {
+      const data = await response.json();
+      return res.json({
+        success: true,
+        tab: tabName,
+        data: data.data || data.records || data.rows || data,
+        timestamp: new Date().toISOString(),
+      });
+    } else {
+      const errText = await response.text().catch(() => "Unknown error");
+      return res.status(response.status).json({
+        success: false,
+        error: `שגיאה בתקשורת מול גוגל שייטס: ${errText}`,
+        tab: tabName,
+      });
+    }
+  } catch (err: any) {
+    return res.status(500).json({
+      success: false,
+      error: err?.message || "נכשלה קריאת הנתונים מהטאב בגוגל שייטס",
+    });
+  }
+});
+
+// Write / Append Data to any Google Sheets Tab
+app.post("/api/sheets/write-tab", async (req, res) => {
+  try {
+    const { tab, action = "write_tab", rowData, rows, mode = "append" } = req.body || {};
+    const tabName = tab || "לוג_הזמנות_מערכת";
+    const targetUrl = serverSettings.webAppUrl;
+
+    if (!targetUrl) {
+      return res.status(400).json({ success: false, error: "כתובת WebApp של גוגל שייץ אינה מוגדרת" });
+    }
+
+    const payload = {
+      action,
+      tabName: String(tabName),
+      tab: String(tabName),
+      rowData,
+      rows: rows || (rowData ? [rowData] : []),
+      mode,
+      timestamp: new Date().toISOString(),
+    };
+
+    const response = await fetch(targetUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+
+    if (response.ok) {
+      const data = await response.json();
+      return res.json({
+        success: true,
+        tab: tabName,
+        result: data,
+        timestamp: new Date().toISOString(),
+      });
+    } else {
+      const errText = await response.text().catch(() => "Unknown error");
+      return res.status(response.status).json({
+        success: false,
+        error: `שגיאה בכתיבה לגוגל שייטס: ${errText}`,
+        tab: tabName,
+      });
+    }
+  } catch (err: any) {
+    return res.status(500).json({
+      success: false,
+      error: err?.message || "נכשלה כתיבת הנתונים לטאב בגוגל שייטס",
+    });
+  }
+});
+
+// Align & Initialize System in Google Sheets
+app.post("/api/sheets/align-system", async (req, res) => {
+  try {
+    const targetUrl = serverSettings.webAppUrl;
+    if (!targetUrl) {
+      return res.status(400).json({ success: false, error: "כתובת WebApp של גוגל שייץ אינה מוגדרת" });
+    }
+
+    const payload = {
+      action: "align_system",
+      source: "SabanOS_Admin_Panel",
+      timestamp: new Date().toISOString(),
+    };
+
+    const response = await fetch(targetUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+
+    if (response.ok) {
+      const data = await response.json();
+      return res.json({
+        success: true,
+        message: "התאמת גליונות המערכת וכל הטאבים בוצעה בהצלחה בגוגל שייטס!",
+        data,
+      });
+    } else {
+      const errText = await response.text().catch(() => "Unknown error");
+      return res.status(response.status).json({
+        success: false,
+        error: `שגיאה בסנכרון מול גוגל שייטס: ${errText}`,
+      });
+    }
+  } catch (err: any) {
+    return res.status(500).json({
+      success: false,
+      error: err?.message || "נכשל סנכרון התאמת המערכת בגוגל שייטס",
     });
   }
 });

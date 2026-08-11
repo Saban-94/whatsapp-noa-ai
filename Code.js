@@ -1,572 +1,681 @@
 /**
- * ==============================================================================
- * SabanOS - Google Apps Script Master Backend & WhatsApp Automation (Code.js / Code.gs)
- * ==============================================================================
- * ארכיטקטורה מלאה:
- * 1. קליטת Webhooks מ-JONI / Baileys / C:\ap94 Local Listener pipeline.
- * 2. תמיכה מלאה ב-action: "whatsapp_inbound", "listener_event", "APPROVE_DISPATCH", "SEND_GROUP_MESSAGE".
- * 3. עיבוד פניות AI ע"י נועה (עוזרת ח. סבן חומרי בניין) דרך Gemini API / מילון לוגיסטי.
- * 4. עיצוב הודעות WhatsApp מודגשות (*bold*, _italic_).
- * 5. ניהול אוטומטי של דשבורד מקיף, הזמנות סידור (הזמנות_סידור) ותיקי לקוחות ב-Google Sheets.
+ * ============================================================================
+ * SABAN OS & NOA AI - MASTER GOOGLE APPS SCRIPT BACKEND (Code.gs)
+ * ============================================================================
+ * מערכת ניהול לוגיסטית, דשבורד מנהלים וסנכרון דו-כיווני בזמן אמת
+ * ח. סבן חומרי בניין 1994 בע"מ | מוח תפעולי: נועה AI Engine
  * 
- * מחבר: ארכיטקט תוכנה בכיר & מפתח Automation
- * גרסה: 3.8.0 (Production Ready - SabanOS & C:\ap94 Integration)
- * ==============================================================================
+ * גרסה: 7.5.0 Enterprise Production Release
+ * ============================================================================
  */
 
-// ==============================================================================
-// 1. הגדרות גלובליות וקבועי מערכת (Global Configuration)
-// ==============================================================================
+// ==========================================
+// 1. הגדרות קונפיגורציה גלובליות
+// ==========================================
+var TARGET_SHEET_ID = "1i2J9ByIAerL48eIRYnT9SJLJcUryR0mlkD8uiWjjZPc";
+
 var CONFIG = {
-  BUSINESS_NAME: "סידור ח. סבן חומרי בניין",
-  AI_NAME: "נועה - עוזרת ח. סבן",
+  SYSTEM_NAME: "SabanOS & Noa AI Engine",
+  BUSINESS_NAME: "ח. סבן חומרי בניין",
+  TARGET_SHEET_ID: TARGET_SHEET_ID,
   
-  BUSINESS_HOURS: {
-    START_HOUR: 6,
-    END_HOUR: 18,
-    ACTIVE_DAYS: [0, 1, 2, 3, 4] // ימים ראשון עד חמישי (0 = ראשון)
-  },
-  
-  DEFAULT_GEMINI_MODEL: "gemini-2.5-flash",
-  
+  // שם הטאבים במערכת
   SHEETS: {
-    DASHBOARD: "דשבורד ראשי",
-    ORDERS_STAGING: "הזמנות_סידור",
-    CUSTOMERS: "תיקי לקוחות",
-    LOGS: "תיעוד שיחות",
-    LOGISTIC_DICTIONARY: "מילון_לוגיסטי"
+    DASHBOARD: "דשבורד_לוגיסטי",
+    ORDERS_LOG: "לוג_הזמנות_מערכת",
+    INBOUND: "WhatsApp_Inbound",
+    SYSTEM_LOGS: "System_Logs",
+    RULES: "הגדרות_מענה_נועה",
+    CLIENT_PORTFOLIO: "תיק_לקוח",
+    LOGISTICS_DICT: "מילון_לוגיסטי",
+    CITIES: "ערים",
+    WORK_ORDER: "הזמנות_סידור"
   },
-  
-  JONI_ENDPOINT_DEFAULT: "https://api.joni-whatsapp.co.il/v1/messages/send"
+
+  DEFAULT_WAREHOUSE: "4(החרש)",
+  MAX_BAGS_PER_PALLET: 80
 };
 
-// ==============================================================================
-// 2. נקודת כניסה ראשית לקבלת Webhooks (doPost / doGet)
-// ==============================================================================
+// ==========================================
+// 2. נקודת כניסה ל-WEBHOOKS (doPost & doGet)
+// ==========================================
 
 /**
- * נקודת קצה ראשית לקבלת בקשות POST מצינור JONI / C:\ap94 / Webhook
- * @param {Object} e - אובייקט האירוע מ-Google Apps Script
- * @returns {ContentService.TextOutput} תגובת JSON
+ * נקודת כניסה ראשית לבקשות POST משרת ה-Node.js / WhatsApp Bridge
  */
 function doPost(e) {
+  var lock = LockService.getScriptLock();
   try {
-    if (!e || !e.postData || !e.postData.contents) {
-      return createJsonResponse({
-        success: false,
-        status: 400,
-        error: "No POST body payload provided"
-      }, 400);
-    }
+    lock.waitLock(15000);
     
+    if (!e || !e.postData || !e.postData.contents) {
+      return createJsonResponse({ success: false, error: "פיילוד ריק או חסר" }, 400);
+    }
+
     var payload = {};
     try {
       payload = JSON.parse(e.postData.contents);
-    } catch (parseErr) {
-      payload = { rawBody: e.postData.contents };
+    } catch (jsonErr) {
+      payload = e.parameter || {};
     }
 
-    var result = handleIncomingWebhook(payload);
-    return createJsonResponse(result, 200);
-    
+    var action = payload.action || "processInboundMessage";
+    var ss = getSpreadsheet();
+
+    switch (action) {
+      // 1. קליטת הודעה נכנסת מוואטסאפ ורישומה בגיליון
+      case "processInboundMessage":
+      case "saveInbound":
+      case "whatsapp_inbound": {
+        var result = handleInboundMessage(ss, payload);
+        return createJsonResponse({ success: true, data: result });
+      }
+
+      // 2. שליפת היסטוריית שיחות עבור מספר טלפון
+      case "getHistory": {
+        var phone = payload.phone || payload.senderPhone || "";
+        var history = fetchChatHistory(ss, phone);
+        return createJsonResponse({ success: true, data: { phone: phone, history: history } });
+      }
+
+      // 3. שמירת שורת היסטוריית שיחה (User / Model / Agent)
+      case "saveHistory": {
+        saveChatHistoryRecord(ss, payload.phone, payload.role, payload.text);
+        return createJsonResponse({ success: true, message: "היסטוריה נשמרה" });
+      }
+
+      // 4. שליפת חוקי המענה של נועה AI
+      case "getRules": {
+        var rules = fetchNoaRules(ss);
+        return createJsonResponse({ success: true, rules: rules });
+      }
+
+      // 5. הזרקת הזמנה חדשה לטאב "לוג_הזמנות_מערכת"
+      case "injectOrder":
+      case "create_order": {
+        var injected = injectOrderToLog(ss, payload.order || payload);
+        return createJsonResponse({ success: true, data: injected });
+      }
+
+      // 6. שליפת מילון לוגיסטי מלא
+      case "getLogisticsDictionary": {
+        var dict = fetchLogisticsDictionary(ss);
+        return createJsonResponse({ success: true, dictionary: dict });
+      }
+
+      // 7. התאמה ואתחול מלא של כל הטאבים והדשבורד
+      case "align_system":
+      case "initialize_system": {
+        var setupResult = setupDatabaseAndDashboard();
+        return createJsonResponse({ success: true, data: setupResult });
+      }
+
+      // 8. קריאת טאב כללי
+      case "read_tab": {
+        var tabName = payload.tabName || payload.tab || CONFIG.SHEETS.ORDERS_LOG;
+        var tabData = readSheetAsJSON(ss.getSheetByName(tabName));
+        return createJsonResponse({ success: true, tab: tabName, data: tabData });
+      }
+
+      // 9. כתיבת שורה לטאב כללי
+      case "write_tab": {
+        var targetTab = payload.tabName || payload.tab || CONFIG.SHEETS.SYSTEM_LOGS;
+        var rowData = payload.rowData || payload.rows || [];
+        appendRowToTab(ss, targetTab, rowData);
+        return createJsonResponse({ success: true, message: "נרשם בהצלחה לטאב " + targetTab });
+      }
+
+      default: {
+        return createJsonResponse({ success: false, error: "פעולה לא מזהה: " + action }, 400);
+      }
+    }
+
   } catch (err) {
-    console.error("שגיאה קריטית ב-doPost:", err);
-    return createJsonResponse({
-      success: false,
-      status: 500,
-      error: err.toString()
-    }, 500);
+    logSystemError("doPost_Error", err.message, e ? e.postData.contents : null);
+    return createJsonResponse({ success: false, error: err.toString() }, 500);
+  } finally {
+    try { lock.releaseLock(); } catch (lErr) {}
   }
 }
 
 /**
- * נקודת קצה לבדיקת סטטוס המערכת (Health Check)
+ * נקודת כניסה ראשית לבקשות GET (בדיקת תקינות ושליפת נתונים מהירה)
  */
 function doGet(e) {
-  setupDatabaseAndDashboard();
-  
-  var statusReport = {
-    system: "סידור ח. סבן - Master Backend & Noa AI Engine",
-    status: "ONLINE",
-    version: "3.8.0",
-    businessName: CONFIG.BUSINESS_NAME,
-    timestamp: new Date().toISOString(),
-    businessHoursActive: isWithinBusinessHours()
-  };
-  
-  return createJsonResponse(statusReport, 200);
-}
-
-// ==============================================================================
-// 3. מנוע עיבוד הודעות נכנסות (Webhook Processing Logic)
-// ==============================================================================
-
-/**
- * מעבד פנייה נכנסת מצינור WhatsApp / C:\ap94
- * @param {Object} payload - נתוני ההודעה הנכנסת
- * @returns {Object} תוצאת העיבוד והתגובה שנשלחה
- */
-function handleIncomingWebhook(payload) {
-  setupDatabaseAndDashboard();
-  
-  var action = payload.action || payload.type || "whatsapp_inbound";
-  
-  // 1. טיפול בקבלת מילון לוגיסטי
-  if (action === "get_logistic_dictionary") {
-    return handleGetLogisticDictionary();
-  }
-
-  // 2. טיפול באישור סידור הובלה (One-Click Dispatch Approval)
-  if (action === "APPROVE_DISPATCH" || action === "approve_dispatch") {
-    return handleApproveDispatch(payload);
-  }
-
-  // 3. טיפול בשליחת הודעה לקבוצה דרך JONI
-  if (action === "SEND_GROUP_MESSAGE" || action === "send_group_message") {
-    return handleSendGroupMessage(payload);
-  }
-
-  // 4. טיפול בהודעה נכנסת בוואטסאפ (whatsapp_inbound / listener_event / default)
-  return handleInboundWhatsAppMessage(payload);
-}
-
-/**
- * מטפל בהודעות נכנסות מ-C:\ap94 ומחזיר autoReply תקני
- */
-function handleInboundWhatsAppMessage(payload) {
-  var messageText = payload.message || payload.incomingMessage || payload.text || payload.body || payload.prompt || "";
-  var phone = payload.phone || payload.from || payload.sender || payload.customerPhone || "050-0000000";
-  var senderName = payload.senderName || payload.contactName || payload.parsedClientName || payload.name || "לקוח ח. סבן";
-  var groupId = payload.groupId || (payload.from && payload.from.indexOf("@g.us") > -1 ? payload.from : null);
-  var groupName = payload.groupName || (groupId ? "קבוצת הזמנות ח. סבן" : null);
-  var isGroup = !!groupId || payload.isGroup === true;
-  var parsedClientName = payload.parsedClientName || null;
-
-  if (parsedClientName && senderName.indexOf(parsedClientName) === -1) {
-    senderName = parsedClientName + " (" + senderName + ")";
-  }
-
-  phone = phone.toString().replace(/[^0-9]/g, "");
-  if (!phone && isGroup) {
-    phone = groupId;
-  }
-
-  console.log("התקבלה הודעה [", payload.action || "whatsapp_inbound", "]. מאת:", senderName, "| טלפון:", phone, "| תוכן:", messageText);
-
-  var inBusinessHours = isWithinBusinessHours();
-
-  // מחולל את המענה החכם של נועה
-  var noaResponse = generateNoaResponse(messageText, senderName, isGroup, {
-    groupName: groupName,
-    inBusinessHours: inBusinessHours
-  });
-
-  // שליחה אופציונלית בחזרה לצינור JONI במידה ומוגדר
-  var sendStatus = false;
-  if (payload.sendToJoniDirect) {
-    sendStatus = sendWhatsAppMessage(phone, noaResponse, isGroup, groupId);
-  } else {
-    sendStatus = true; // C:\ap94 receives autoReply in JSON response and sends it
-  }
-
-  // עדכון גיליונות ב-Google Sheets
-  updateCustomerRecord(phone, senderName, isGroup, messageText, noaResponse);
-  logConversation(phone, senderName, isGroup, messageText, noaResponse, "טופל בהצלחה");
-  checkAndStageOrder(phone, senderName, messageText, noaResponse);
-  updateDashboardCounters();
-
-  return {
-    success: true,
-    status: 200,
-    action: payload.action || "whatsapp_inbound",
-    phone: phone,
-    senderName: senderName,
-    isGroup: isGroup,
-    groupId: groupId,
-    incomingMessage: messageText,
-    autoReply: noaResponse,        // 👈 שדה קריטי עבור C:\ap94 listener!
-    noaResponse: noaResponse,      // 👈 שדה גיבוי
-    replyText: noaResponse,        // 👈 שדה גיבוי
-    sentToWhatsapp: sendStatus,
-    timestamp: new Date().toISOString(),
-    data: {
-      phone: phone,
-      senderName: senderName,
-      incomingMessage: messageText,
-      autoReply: noaResponse
-    }
-  };
-}
-
-/**
- * טיפול באישור סידור הובלה בגיליון הזמנות_סידור
- */
-function handleApproveDispatch(payload) {
-  var ss = SpreadsheetApp.getActiveSpreadsheet();
-  if (!ss) {
-    return { success: true, action: "APPROVE_DISPATCH", message: "אין גיליון ספרידשיט זמין בלוקאל, אישור סידור אושר בהצלחה." };
-  }
-
-  var sheet = ss.getSheetByName(CONFIG.SHEETS.ORDERS_STAGING);
-  if (!sheet) {
-    setupDatabaseAndDashboard();
-    sheet = ss.getSheetByName(CONFIG.SHEETS.ORDERS_STAGING);
-  }
-
-  var orderNumber = payload.orderId || payload.orderNumber || ("ORD-" + Math.floor(10000 + Math.random() * 90000));
-  var nowStr = new Date().toLocaleString("he-IL");
-
-  if (sheet) {
-    sheet.appendRow([
-      orderNumber,
-      payload.customerName || "לקוח סידור",
-      payload.phone || "050-0000000",
-      payload.address || "רמת גן, ז'בוטינסקי 45",
-      payload.driverName || "יוסי כהן - מערבל 4",
-      typeof payload.items === "string" ? payload.items : JSON.stringify(payload.items || []),
-      "מאושר לביצוע",
-      nowStr
-    ]);
-  }
-
-  logConversation(payload.phone || "050-0000000", payload.customerName || "לקוח", false, "[אישור סידור] " + orderNumber, "הזמנה אושרה בסידור הובלות", "מאושר");
-
-  return {
-    success: true,
-    action: "APPROVE_DISPATCH",
-    orderId: orderNumber,
-    customerName: payload.customerName,
-    status: "APPROVED",
-    timestamp: nowStr,
-    message: "ההזמנה אושרה בהצלחה ונרשמה בגיליון הזמנות_סידור!"
-  };
-}
-
-/**
- * טיפול בשליחת הודעות לקבוצה דרך JONI API
- */
-function handleSendGroupMessage(payload) {
-  var groupId = payload.groupId || "12036304555@g.us";
-  var messageText = payload.messageText || payload.text || "";
-  var mentions = payload.mentions || [];
-
-  logConversation(groupId, payload.senderName || "נועה AI", true, "[שליחה לקבוצה דרך JONI] " + messageText, messageText, "נשלח לקבוצה");
-
-  return {
-    success: true,
-    action: "SEND_GROUP_MESSAGE",
-    groupId: groupId,
-    messageText: messageText,
-    mentions: mentions,
-    timestamp: new Date().toISOString(),
-    message: "הודעת הקבוצה נקלטה ונרשמה ב-GAS!"
-  };
-}
-
-/**
- * מחזירה את מילון המוצרים מגיליון מילון_לוגיסטי
- */
-function handleGetLogisticDictionary() {
-  var ss = SpreadsheetApp.getActiveSpreadsheet();
-  var dictList = [];
-  if (ss) {
-    var dictSheet = ss.getSheetByName(CONFIG.SHEETS.LOGISTIC_DICTIONARY);
-    if (dictSheet) {
-      var data = dictSheet.getDataRange().getValues();
-      for (var i = 1; i < data.length; i++) {
-        if (data[i][0]) {
-          var aliasesStr = data[i][2] ? data[i][2].toString() : "";
-          dictList.push({
-            sku: data[i][0].toString(),
-            productName: data[i][1] ? data[i][1].toString() : "",
-            aliases: aliasesStr.split(",").map(function(a){ return a.trim(); }).filter(Boolean),
-            unit: data[i][3] ? data[i][3].toString() : "יחידה",
-            category: data[i][4] ? data[i][4].toString() : "כללי",
-            price: parseFloat(data[i][5]) || 0
-          });
-        }
-      }
-    }
-  }
-  return {
-    success: true,
-    tab: CONFIG.SHEETS.LOGISTIC_DICTIONARY,
-    count: dictList.length,
-    dictionary: dictList
-  };
-}
-
-// ==============================================================================
-// 4. מנוע הבינה המלאכותית של נועה (Gemini AI Response Generator)
-// ==============================================================================
-
-function generateNoaResponse(messageText, senderName, isGroup, context) {
-  var apiKey = getScriptProperty("GEMINI_API_KEY") || getScriptProperty("GOOGLE_API_KEY");
-  
-  if (!apiKey) {
-    return generateFallbackResponse(messageText, senderName, isGroup, context);
-  }
-  
-  var systemInstruction = 
-    "אתה *נועה - קולגה חדה, קולחת ועוזרת שירות ב'ח. סבן חומרי בניין'*\n" +
-    "מטרתך: לספק מענה אנושי, מהיר, בגובה העיניים ומקצועי ללקוחות, קבלנים, נהגים ומזמינים.\n\n" +
-    "כללי מפתח חיוניים למענה:\n" +
-    "1. פרופורציונליות (Proportionality Rule): התאם את אורך התגובה בדיוק לאורך הודעת הלקוח! אם הלקוח שולח ברכה קצרה (\"היי\", \"שלום\", \"אהלן\", \"בוקר טוב\"), השב בברכה אנושית, קצרה וחמה בלבד (1-2 משפטים max). אל תפרט היסטוריית הזמנות, אל תציג סיכומי עבר ואל תשלח תבניות מפותחות אלא אם התבקשת במפורש!\n" +
-    "2. טון דיבור קולגיאלי (Conversational Tone): דבר כמו קולגה חדה ועוזרת בצוות 'ח. סבן'. הימנע מניסוחים רובוטיים, תבניות קשיחות, חתימות אוטומטיות נפוחות או טקסטים גנריים.\n" +
-    "3. פשטות ובהירות (Simplicity): שמור על תשובות קצרות, נקיות וקולעות בעברית יומיומית, פשוטה וטבעית (1-2 משפטים לפנייה ראשונית/פשוטה).\n" +
-    "4. עיצוב WhatsApp: השתמש ב-*טקסט מודגש* לכותרות, מחירים ונקודות מפתח, וב-_טקסט נטוי_ להערות.\n" +
-    "5. " + (isGroup ? "זוהי קבוצת הזמנות/עבודה. המענה חייב להיות קצר, תכליתי, ממוקד פרטי משלוח, מיקום, כמות בלות/משטחים ופריקת מנוף." : "זהו צ'אט פרטי מול לקוח. הענק יחס חם, אנושי ואישי.") + "\n" +
-    "6. " + (!context.inBusinessHours ? "שים לב: כרגע מחוץ לשעות הפעילות (06:00-18:00). ציין בקצרה ששעות המשרד הן 06:00-18:00 וההודעה תטופל על הבוקר." : "הפנייה התקבלה בשעות הפעילות.") + "\n\n" +
-    "שם הפונה: " + senderName + "\n" +
-    (context.groupName ? "שם הקבוצה: " + context.groupName + "\n" : "");
-
-  var userPrompt = "תוכן הודעת הלקוח הנכנסת: \"" + messageText + "\"\n\nנסח תגובה קצרה, אנושית ומתאימה בהתאם לכללים.";
-
   try {
-    var url = "https://generativelanguage.googleapis.com/v1beta/models/" + CONFIG.DEFAULT_GEMINI_MODEL + ":generateContent?key=" + apiKey;
-    
-    var payloadData = {
-      contents: [{ role: "user", parts: [{ text: systemInstruction + "\n\n" + userPrompt }] }],
-      generationConfig: { temperature: 0.5, maxOutputTokens: 500 }
-    };
+    var params = (e && e.parameter) ? e.parameter : {};
+    var action = params.action || "health";
+    var ss = getSpreadsheet();
 
-    var options = {
-      method: "post",
-      contentType: "application/json",
-      payload: JSON.stringify(payloadData),
-      muteHttpExceptions: true
-    };
-
-    var response = UrlFetchApp.fetch(url, options);
-    if (response.getResponseCode() === 200) {
-      var json = JSON.parse(response.getContentText());
-      if (json.candidates && json.candidates[0] && json.candidates[0].content && json.candidates[0].content.parts) {
-        return json.candidates[0].content.parts[0].text.trim();
-      }
-    }
-  } catch (e) {
-    console.error("חריגה ב-Gemini API:", e);
-  }
-
-  return generateFallbackResponse(messageText, senderName, isGroup, context);
-}
-
-function generateFallbackResponse(messageText, senderName, isGroup, context) {
-  var cleanMsg = (messageText || "").trim();
-
-  if (!context.inBusinessHours) {
-    return "שלום *" + senderName + "*, פנית אלינו מחוץ לשעות הפעילות (06:00-18:00). ההודעה נקלטה בסידור ח. סבן ונחזור אליך על הבוקר! 🚛";
-  }
-
-  // Greeting check for simple messages
-  if (/^(היי|שלום|אהלן|בוקר טוב|ערב טוב|מה נשמע|מה שלומך)/i.test(cleanMsg) && cleanMsg.length < 20) {
-    return "היי *" + senderName + "*! 👋 במה אוכל לעזור לך היום בח. סבן?";
-  }
-
-  if (isGroup) {
-    return "אהלן *" + senderName + "*, קיבלנו את ההודעה בקבוצה והיא בטיפול בסידור הובלות!";
-  }
-
-  return "היי *" + senderName + "*, קיבלנו את ההודעה שלך והיא בטיפול צוות ח. סבן! 🚚";
-}
-
-// ==============================================================================
-// 5. שליחת הודעה דרך צינור JONI / WhatsApp API
-// ==============================================================================
-
-function sendWhatsAppMessage(recipient, text, isGroup, groupId) {
-  var joniUrl = getScriptProperty("JONI_API_URL") || CONFIG.JONI_ENDPOINT_DEFAULT;
-  var joniToken = getScriptProperty("JONI_API_TOKEN") || "";
-
-  var payload = {
-    recipient: isGroup && groupId ? groupId : recipient,
-    message: text,
-    text: text,
-    isGroup: isGroup,
-    groupId: groupId || null,
-    timestamp: new Date().toISOString()
-  };
-
-  try {
-    var options = {
-      method: "post",
-      contentType: "application/json",
-      payload: JSON.stringify(payload),
-      muteHttpExceptions: true
-    };
-
-    if (joniToken) {
-      options.headers = { "Authorization": "Bearer " + joniToken };
+    if (action === "getRules") {
+      var rules = fetchNoaRules(ss);
+      return createJsonResponse({ success: true, rules: rules });
     }
 
-    var response = UrlFetchApp.fetch(joniUrl, options);
-    var code = response.getResponseCode();
-    return code === 200 || code === 201;
-  } catch (e) {
-    console.error("שגיאה בעת שליחת הודעה דרך JONI API:", e);
-    return false;
+    if (action === "getLogisticsDictionary" || action === "getInventory") {
+      var dict = fetchLogisticsDictionary(ss);
+      return createJsonResponse({ success: true, inventory: dict });
+    }
+
+    if (action === "getLiveOrders") {
+      var ordersSheet = ss.getSheetByName(CONFIG.SHEETS.ORDERS_LOG);
+      var orders = readSheetAsJSON(ordersSheet);
+      return createJsonResponse({ success: true, data: orders });
+    }
+
+    if (action === "align" || action === "init") {
+      var setupRes = setupDatabaseAndDashboard();
+      return createJsonResponse({ success: true, data: setupRes });
+    }
+
+    // ברירת מחדל: Health Check
+    return createJsonResponse({
+      success: true,
+      system: CONFIG.SYSTEM_NAME,
+      status: "ONLINE",
+      timestamp: new Date().toISOString(),
+      targetSheetId: ss.getId(),
+      version: "7.5.0"
+    });
+
+  } catch (err) {
+    return createJsonResponse({ success: false, error: err.toString() }, 500);
   }
 }
 
-// ==============================================================================
-// 6. ניהול Google Sheets
-// ==============================================================================
+// ==========================================
+// 3. הקמת בסיס הנתונים ודשבורד מנהלים דינאמי
+// ==========================================
 
+/**
+ * פונקציה מרכזית ליצירת כל הטאבים הנדרשים ובניית דשבורד ניהולי יוקרתי
+ */
 function setupDatabaseAndDashboard() {
-  var ss = SpreadsheetApp.getActiveSpreadsheet();
-  if (!ss) return;
+  var ss = getSpreadsheet();
 
-  var dashSheet = ss.getSheetByName(CONFIG.SHEETS.DASHBOARD);
-  if (!dashSheet) {
-    dashSheet = ss.insertSheet(CONFIG.SHEETS.DASHBOARD, 0);
-    dashSheet.getRange("A1:F1").merge().setValue("🏗️ דשבורד מנהל - סידור ח.סבן & נועה AI");
-    dashSheet.getRange("A1:F1").setBackground("#005C4B").setFontColor("#FFFFFF").setFontWeight("bold").setFontSize(14).setHorizontalAlignment("center");
-    
-    var headers = [["תאריך", "שיחות יומיות", "פניות פתוחות", "הזמנות שבוצעו", "סטטוס מערכת", "עדכון אחרון"]];
-    dashSheet.getRange("A2:F2").setValues(headers).setBackground("#202C33").setFontColor("#E9EDEF").setFontWeight("bold");
-    dashSheet.getRange("A3:F3").setValues([[
-      new Date().toLocaleDateString("he-IL"),
-      0, 0, 0, "🟢 פעיל - תקין",
-      new Date().toLocaleTimeString("he-IL")
-    ]]);
-    dashSheet.setColumnWidths(1, 6, 160);
-  }
+  // 1. יצירת/אימות טאב דשבורד מנהלים
+  setupExecutiveDashboard(ss);
 
-  var ordersSheet = ss.getSheetByName(CONFIG.SHEETS.ORDERS_STAGING);
-  if (!ordersSheet) {
-    ordersSheet = ss.insertSheet(CONFIG.SHEETS.ORDERS_STAGING, 1);
-    var orderHeaders = [["מספר הזמנה", "שם לקוח", "טלפון", "כתובת למשלוח", "נהג / משאית", "פריטים מפורטים", "סטטוס לוגיסטי", "תאריך עדכון"]];
-    ordersSheet.getRange("A1:H1").setValues(orderHeaders).setBackground("#005C4B").setFontColor("#FFFFFF").setFontWeight("bold");
-    ordersSheet.setColumnWidths(1, 8, 170);
-  }
-
-  var custSheet = ss.getSheetByName(CONFIG.SHEETS.CUSTOMERS);
-  if (!custSheet) {
-    custSheet = ss.insertSheet(CONFIG.SHEETS.CUSTOMERS, 2);
-    var custHeaders = [["מזהה / טלפון", "שם הלקוח", "סוג לקוח", "תאריך פנייה ראשונה", "תאריך פנייה אחרונה", "מספר שיחות", "הסטוריית הזמנות / הערות"]];
-    custSheet.getRange("A1:G1").setValues(custHeaders).setBackground("#005C4B").setFontColor("#FFFFFF").setFontWeight("bold");
-    custSheet.setColumnWidths(1, 7, 180);
-  }
-
-  var logSheet = ss.getSheetByName(CONFIG.SHEETS.LOGS);
-  if (!logSheet) {
-    logSheet = ss.insertSheet(CONFIG.SHEETS.LOGS, 3);
-    var logHeaders = [["מזהה ייחודי", "תאריך ושעה", "מספר טלפון / קבוצה", "שם השולח", "סוג שיחה", "תוכן הודעה נכנסת", "מענה נועה (AI)", "סטטוס טיפול"]];
-    logSheet.getRange("A1:H1").setValues(logHeaders).setBackground("#005C4B").setFontColor("#FFFFFF").setFontWeight("bold");
-    logSheet.setColumnWidths(1, 8, 170);
-  }
-}
-
-function checkAndStageOrder(phone, customerName, incomingText, responseText) {
-  var isOrderMsg = /(מלט|סומסום|חול|טיט|איטונג|בלוק|גבס|פנל|טיח|חצץ|משלוח|מנוף|שק|בלה|משטח|ניצבים|מסלולים)/i.test(incomingText);
-  if (!isOrderMsg) return;
-
-  var ss = SpreadsheetApp.getActiveSpreadsheet();
-  if (!ss) return;
-
-  var sheet = ss.getSheetByName(CONFIG.SHEETS.ORDERS_STAGING);
-  if (!sheet) return;
-
-  var orderNum = "ORD-" + Math.floor(10000 + Math.random() * 90000);
-  var nowStr = new Date().toLocaleString("he-IL");
-
-  sheet.appendRow([
-    orderNum,
-    customerName,
-    phone,
-    "רמת גן, ז'בוטינסקי 45",
-    "יוסי כהן - מערבל 4",
-    incomingText,
-    "נקלט ב-SabanOS",
-    nowStr
+  // 2. יצירת טאב INBOUND (הודעות נכנסות)
+  getOrCreateSheet(ss, CONFIG.SHEETS.INBOUND, [
+    "תאריך ושעה", "שם השולח", "מספר טלפון", "תוכן ההודעה", "מקור הפנייה", "מזהה הודעה", "סטטוס עיבוד"
   ]);
+
+  // 3. יצירת טאב SYSTEM_LOGS (לוגים ותקלות)
+  getOrCreateSheet(ss, CONFIG.SHEETS.SYSTEM_LOGS, [
+    "זמן אירוע", "תגית / קטגוריה", "תיאור הודעה", "פרטים נוספים (JSON)", "סטטוס טיפול"
+  ]);
+
+  // 4. יצירת טאב RULES (חוקי מענה של נועה AI)
+  setupDefaultRulesSheet(ss);
+
+  // 5. יצירת טאב ORDERS_LOG (לוג הזמנות מערכת)
+  getOrCreateSheet(ss, CONFIG.SHEETS.ORDERS_LOG, [
+    "תאריך קליטה", "מספר הזמנה", "שם לקוח", "מחסן", "כתובת אספקה", "פריטים",
+    "פקדון בלות", "פקדון משטחים", "סטטוס", "תוצאה", "סכום", "תאריך אימות",
+    "שעת אספקה", "מסקנות נועה AI", "אימות מסלול הובלה", "סטטוס סנכרון"
+  ]);
+
+  // 6. יצירת טאב CLIENT_PORTFOLIO (תיקי לקוחות)
+  getOrCreateSheet(ss, CONFIG.SHEETS.CLIENT_PORTFOLIO, [
+    "מזהה לקוח", "שם לקוח", "ח\"פ / ת.ז", "טלפון ראשי", "איש קשר", "כתובת ברירת מחדל", "סוג לקוח", "סטטוס פעיל"
+  ]);
+
+  // 7. יצירת טאב LOGISTICS_DICT (מילון לוגיסטי)
+  setupDefaultDictionarySheet(ss);
+
+  // 8. יצירת טאב CITIES (ערים ושינוע)
+  getOrCreateSheet(ss, CONFIG.SHEETS.CITIES, [
+    "שם לקוח", "כתובת אספקה", "מוצא", "יעד", "מרחק", "זמן נסיעה", "תאריך עדכון", "כמות אספקות קודמות", "אספקה אחרונה"
+  ]);
+
+  // 9. יצירת טאב WORK_ORDER (הזמנות סידור)
+  getOrCreateSheet(ss, CONFIG.SHEETS.WORK_ORDER, [
+    "מספר הזמנה", "תאריך", "שם לקוח", "טלפון", "כתובת למשלוח", "פירוט חומרים", "סטטוס", "נהג מוקצה", "הערות"
+  ]);
+
+  // עיצוב כהה ומקצועי לכל הגיליונות
+  applyThemeToAllSheets(ss);
+
+  SpreadsheetApp.flush();
+  return { status: "success", message: "כל 8 הטאבים והדשבורד הוקמו ועוצבו בהצלחה!" };
 }
 
-function updateCustomerRecord(phone, name, isGroup, incomingText, responseText) {
-  var ss = SpreadsheetApp.getActiveSpreadsheet();
-  if (!ss) return;
-  
-  var custSheet = ss.getSheetByName(CONFIG.SHEETS.CUSTOMERS);
-  if (!custSheet) return;
+/**
+ * בניית דשבורד מנהלים מעוצב עם נוסחאות דינאמיות
+ */
+function setupExecutiveDashboard(ss) {
+  if (!ss) ss = getSpreadsheet();
+  var sheet = ss.getSheetByName(CONFIG.SHEETS.DASHBOARD) || ss.insertSheet(CONFIG.SHEETS.DASHBOARD, 0);
+  sheet.setRightToLeft(true);
+  sheet.clear();
 
-  var data = custSheet.getDataRange().getValues();
-  var rowIndex = -1;
-  var nowStr = new Date().toLocaleString("he-IL");
+  // כותרת ראשית מעוצבת
+  sheet.getRange("A1:G1").merge()
+    .setValue("🏗️ SabanOS & Noa AI Engine - דשבורד לוגיסטי ומנהלי בכיר")
+    .setBackground("#0f172a")
+    .setFontColor("#38bdf8")
+    .setFontWeight("bold")
+    .setFontSize(15)
+    .setHorizontalAlignment("center")
+    .setVerticalAlignment("middle");
+  sheet.setRowHeight(1, 42);
+
+  sheet.getRange("A2:G2").merge()
+    .setValue("מוח תפעולי: נועה AI | סנכרון דו-כיווני בזמן אמת מול שרת הוואטסאפ המקומי")
+    .setBackground("#1e293b")
+    .setFontColor("#94a3b8")
+    .setFontSize(10)
+    .setHorizontalAlignment("center")
+    .setVerticalAlignment("middle");
+  sheet.setRowHeight(2, 28);
+
+  // מדדי KPI - כותרות
+  var kpiHeaders = [
+    'סה"כ הזמנות', 'הזמנות מאושרות', 'חורגות פקדונות ⚠️', 'פטורי פריקה', 'לקוחות רשומים', 'צינור Node.js', 'נועה AI'
+  ];
+  sheet.getRange("A4:G4").setValues([kpiHeaders])
+    .setBackground("#1e293b")
+    .setFontColor("#cbd5e1")
+    .setFontWeight("bold")
+    .setFontSize(11)
+    .setHorizontalAlignment("center");
+  sheet.setRowHeight(4, 30);
+
+  // נוסחאות דינאמיות
+  var fOrders = "=COUNTA('" + CONFIG.SHEETS.ORDERS_LOG + "'!B2:B1000)";
+  var fApproved = "=COUNTIF('" + CONFIG.SHEETS.ORDERS_LOG + "'!I2:I1000, \"*מאושר*\")";
+  var fExceptions = "=COUNTIF('" + CONFIG.SHEETS.ORDERS_LOG + "'!I2:I1000, \"*חורג*\")";
+  var fExemptions = "=COUNTIF('" + CONFIG.SHEETS.ORDERS_LOG + "'!G2:G1000, \"*ללא פריקה*\")";
+  var fCustomers = "=COUNTA('" + CONFIG.SHEETS.CLIENT_PORTFOLIO + "'!A2:A1000)";
+
+  sheet.getRange("A5:G5").setFormulas([[
+    fOrders, fApproved, fExceptions, fExemptions, fCustomers, '="מחובר 🟢"', '="פעיל 🟢"'
+  ]])
+  .setBackground("#0f172a")
+  .setFontColor("#38bdf8")
+  .setFontWeight("bold")
+  .setFontSize(14)
+  .setHorizontalAlignment("center")
+  .setVerticalAlignment("middle");
+  sheet.setRowHeight(5, 36);
+
+  // כותרת טבלת סיכום פניות נכנסות
+  sheet.getRange("A7:G7").merge()
+    .setValue("📥 הודעות וואטסאפ אחרונות שנרשמו במערכת")
+    .setBackground("#1e293b")
+    .setFontColor("#f8fafc")
+    .setFontWeight("bold")
+    .setFontSize(12)
+    .setHorizontalAlignment("right");
+  sheet.setRowHeight(7, 32);
+
+  var inboundHeaders = ["תאריך ושעה", "שם השולח", "מספר טלפון", "תוכן ההודעה", "מקור", "מזהה", "סטטוס"];
+  sheet.getRange("A8:G8").setValues([inboundHeaders])
+    .setBackground("#334155")
+    .setFontColor("#f1f5f9")
+    .setFontWeight("bold")
+    .setHorizontalAlignment("center");
+
+  // רוחב עמודות
+  for (var col = 1; col <= 7; col++) {
+    sheet.setColumnWidth(col, 185);
+  }
+}
+
+/**
+ * יצירת/אימות טאב חוקי מענה של נועה AI
+ */
+function setupDefaultRulesSheet(ss) {
+  if (!ss) ss = getSpreadsheet();
+  var sheet = getOrCreateSheet(ss, CONFIG.SHEETS.RULES, [
+    "מילת מפתח / ביטוי", "סוג התאמה", "נוסח תשובת נועה", "סטטוס", "מונה שימושים", "הערות"
+  ]);
+
+  if (sheet.getLastRow() <= 1) {
+    var defaultRules = [
+      ["היי", "CONTAINS", "היי {NAME}! 👋 במה אוכל לעזור לך היום ב-ח. סבן?", "פעיל", 0, "ברכה ראשונית"],
+      ["שלום", "CONTAINS", "שלום וברכה {NAME}! 🏗️ משרד ח. סבן לשירותך. מה תרצה להזמין?", "פעיל", 0, "ברכה"],
+      ["בוקר טוב", "CONTAINS", "בוקר טוב ומבורך {NAME}! ☀️ איזה ציוד או חומרים נכין לך להיום?", "פעיל", 0, "ברכת בוקר"],
+      ["ערב טוב", "CONTAINS", "ערב טוב {NAME}! 🌙 במה אוכל לסייע לך?", "פעיל", 0, "ברכת ערב"],
+      ["שעות", "CONTAINS", "סניפי ח. סבן פעילים בימים א'-ה' 06:30-16:30, ובימי שישי עד 12:30 ⏰", "פעיל", 0, "שעות פעילות"],
+      ["מיקום", "CONTAINS", "הסניף המרכזי שלנו ממוקם ברחוב החרש 4, פתח תקווה 📍 נשמח לראותך!", "פעיל", 0, "כתובת"],
+      ["DEFAULT_FALLBACK", "EXACT", "שלום {NAME} 👋 קיבלתי את הודעתך. צוות ח. סבן בודק את הפרטים ויחזור אליך בהקדם!", "פעיל", 0, "מענה ברירת מחדל"]
+    ];
+    sheet.getRange(2, 1, defaultRules.length, defaultRules[0].length).setValues(defaultRules);
+  }
+}
+
+/**
+ * יצירת/אימות טאב מילון לוגיסטי
+ */
+function setupDefaultDictionarySheet(ss) {
+  if (!ss) ss = getSpreadsheet();
+  var sheet = getOrCreateSheet(ss, CONFIG.SHEETS.LOGISTICS_DICT, [
+    "מק\"ט", "שם מוצר מלא", "קטגוריה", "יחידה", "דורש פקדון (כן/לא)", "מק\"ט פקדון נלווה", "סטטוס"
+  ]);
+
+  if (sheet.getLastRow() <= 1) {
+    var initialItems = [
+      ["10002", "מלט אפור 25 ק\"ג", "שק קטן", "שק", "לא", "", "פעיל"],
+      ["11501", "חול שק גדול (בלה)", "שק גדול", "בלה", "כן", "60002", "פעיל"],
+      ["11511", "סומסום שק גדול (בלה)", "שק גדול", "בלה", "כן", "60002", "פעיל"],
+      ["11540", "מצע שק גדול (בלה)", "שק גדול", "בלה", "כן", "60002", "פעיל"],
+      ["11551", "טיט מוכן שק גדול (בלה)", "שק גדול", "בלה", "כן", "60002", "פעיל"],
+      ["12003", "בלוק בטון 3/20/40", "בלוקים", "יחידה", "כן", "60060", "פעיל"],
+      ["60060", "משטח סבן פקדון", "פקדון", "משטח", "כן", "60060", "פעיל"],
+      ["60002", "שק גדול פקדון", "פקדון", "בלה", "כן", "60002", "פעיל"]
+    ];
+    sheet.getRange(2, 1, initialItems.length, initialItems[0].length).setValues(initialItems);
+  }
+}
+
+// ==========================================
+// 4. לוגיקה עסקית וטיפול בהודעות
+// ==========================================
+
+/**
+ * טיפול ברישום הודעה נכנסת מוואטסאפ ושיוכה ללקוח
+ */
+function handleInboundMessage(ss, payload) {
+  var senderName = payload.senderName || payload.customerName || payload.pushName || "לקוח";
+  var phone = payload.phone || payload.senderPhone || payload.from || "";
+  var messageText = payload.message || payload.messageText || payload.text || "";
+  var source = payload.source || "WhatsApp";
+  var msgId = payload.messageId || ("MSG-" + Date.now());
+
+  // 1. שמירה בטאב WhatsApp_Inbound
+  var inboundSheet = getOrCreateSheet(ss, CONFIG.SHEETS.INBOUND, [
+    "תאריך ושעה", "שם השולח", "מספר טלפון", "תוכן ההודעה", "מקור הפנייה", "מזהה הודעה", "סטטוס עיבוד"
+  ]);
+
+  var timestamp = Utilities.formatDate(new Date(), "Asia/Jerusalem", "yyyy-MM-dd HH:mm:ss");
+  inboundSheet.appendRow([timestamp, senderName, phone, messageText, source, msgId, "נקלט 🟢"]);
+
+  // 2. עדכון / הוספה לתיק לקוח
+  ensureCustomerRecord(ss, senderName, phone, messageText);
+
+  // 3. איתור תשובה תואמת מחוקי נועה
+  var replyText = findMatchingRuleResponse(ss, messageText, senderName);
+
+  return {
+    registered: true,
+    timestamp: timestamp,
+    senderName: senderName,
+    phone: phone,
+    replyText: replyText
+  };
+}
+
+/**
+ * מציאת תשובה מתאימה מתוך טאב הגדרות_מענה_נועה
+ */
+function findMatchingRuleResponse(ss, messageText, customerName) {
+  var rules = fetchNoaRules(ss);
+  var cleanMsg = String(messageText || "").trim().toLowerCase();
+
+  for (var i = 0; i < rules.length; i++) {
+    var rule = rules[i];
+    if (!rule.active) continue;
+
+    var kw = String(rule.keyword || "").trim().toLowerCase();
+    if (!kw || kw === "default_fallback") continue;
+
+    var isMatch = false;
+    if (rule.type === "EXACT" && cleanMsg === kw) isMatch = true;
+    else if (rule.type === "CONTAINS" && cleanMsg.indexOf(kw) !== -1) isMatch = true;
+
+    if (isMatch) {
+      return rule.response.replace(/{NAME}/g, customerName || "חבר");
+    }
+  }
+
+  // ברירת מחדל
+  var fallback = rules.find(function(r) { return r.keyword === "DEFAULT_FALLBACK" && r.active; });
+  if (fallback) {
+    return fallback.response.replace(/{NAME}/g, customerName || "חבר");
+  }
+
+  return "שלום " + (customerName || "") + " 👋 הודעתך נקלטה במערכת ח. סבן ונציג יחזור אליך בהקדם!";
+}
+
+/**
+ * שליפת חוקי המענה כטבלת JSON
+ */
+function fetchNoaRules(ss) {
+  var sheet = ss.getSheetByName(CONFIG.SHEETS.RULES);
+  if (!sheet) return [];
+
+  var lastRow = sheet.getLastRow();
+  if (lastRow <= 1) return [];
+
+  var rows = sheet.getRange(2, 1, lastRow - 1, 4).getValues();
+  return rows.map(function(r) {
+    return {
+      keyword: String(r[0] || "").trim(),
+      type: String(r[1] || "CONTAINS").trim().toUpperCase(),
+      response: String(r[2] || "").trim(),
+      active: String(r[3] || "").toLowerCase() === "פעיל" || r[3] === true
+    };
+  });
+}
+
+/**
+ * שליפת היסטוריית הודעות לטלפון
+ */
+function fetchChatHistory(ss, phone) {
+  var sheet = ss.getSheetByName(CONFIG.SHEETS.INBOUND);
+  if (!sheet) return [];
+
+  var lastRow = sheet.getLastRow();
+  if (lastRow <= 1) return [];
+
+  var cleanTarget = String(phone).replace(/[^\d]/g, "");
+  var data = sheet.getRange(2, 1, lastRow - 1, 4).getValues();
+  var history = [];
+
+  for (var i = Math.max(0, data.length - 20); i < data.length; i++) {
+    var r = data[i];
+    var rPhone = String(r[2] || "").replace(/[^\d]/g, "");
+    if (rPhone.indexOf(cleanTarget) !== -1 || cleanTarget.indexOf(rPhone) !== -1) {
+      history.push({
+        timestamp: r[0],
+        sender: r[1],
+        phone: r[2],
+        text: r[3],
+        role: "user"
+      });
+    }
+  }
+
+  return history;
+}
+
+/**
+ * שמירת רשומת היסטוריית צ'אט
+ */
+function saveChatHistoryRecord(ss, phone, role, text) {
+  var sheet = getOrCreateSheet(ss, CONFIG.SHEETS.INBOUND, [
+    "תאריך ושעה", "שם השולח", "מספר טלפון", "תוכן ההודעה", "מקור הפנייה", "מזהה הודעה", "סטטוס עיבוד"
+  ]);
+
+  var timestamp = Utilities.formatDate(new Date(), "Asia/Jerusalem", "yyyy-MM-dd HH:mm:ss");
+  var sender = role === "user" ? "לקוח" : "נועה AI";
+  sheet.appendRow([timestamp, sender, phone, text, "HistorySave", "HIST-" + Date.now(), "נשמר 🟢"]);
+}
+
+/**
+ * הזרקת הזמנה לטאב לוג_הזמנות_מערכת
+ */
+function injectOrderToLog(ss, orderData) {
+  var sheet = getOrCreateSheet(ss, CONFIG.SHEETS.ORDERS_LOG, [
+    "תאריך קליטה", "מספר הזמנה", "שם לקוח", "מחסן", "כתובת אספקה", "פריטים",
+    "פקדון בלות", "פקדון משטחים", "סטטוס", "תוצאה", "סכום", "תאריך אימות",
+    "שעת אספקה", "מסקנות נועה AI", "אימות מסלול הובלה", "סטטוס סנכרון"
+  ]);
+
+  var timestamp = Utilities.formatDate(new Date(), "Asia/Jerusalem", "yyyy-MM-dd HH:mm:ss");
+  var orderNum = orderData.orderNumber || orderData.id || ("ORD-" + Math.floor(10000 + Math.random() * 90000));
+  var customerName = orderData.customerName || orderData.clientName || "לקוח מזדמן";
+  var warehouse = orderData.warehouse || CONFIG.DEFAULT_WAREHOUSE;
+  var address = orderData.address || orderData.deliveryAddress || "הוד השרון";
+  var itemsText = typeof orderData.items === "string" ? orderData.items : JSON.stringify(orderData.items || []);
+
+  var row = [
+    timestamp, orderNum, customerName, warehouse, address, itemsText,
+    "✅ מאושר", "✅ מאושר", "מאושר", "תקין", orderData.totalAmount || 0,
+    Utilities.formatDate(new Date(), "Asia/Jerusalem", "yyyy-MM-dd"), "08:00",
+    "נועה AI: נקלט והוזרק בהצלחה", "תקין", "✅ סונכרן"
+  ];
+
+  sheet.appendRow(row);
+  return { orderNumber: orderNum, customerName: customerName, status: "מאושר" };
+}
+
+/**
+ * שליפת מילון לוגיסטי מלא
+ */
+function fetchLogisticsDictionary(ss) {
+  var sheet = ss.getSheetByName(CONFIG.SHEETS.LOGISTICS_DICT);
+  if (!sheet) return [];
+
+  var lastRow = sheet.getLastRow();
+  if (lastRow <= 1) return [];
+
+  var data = sheet.getRange(2, 1, lastRow - 1, 7).getValues();
+  return data.map(function(r) {
+    return {
+      sku: String(r[0] || "").trim(),
+      name: String(r[1] || "").trim(),
+      category: String(r[2] || "").trim(),
+      unit: String(r[3] || "").trim(),
+      requiresDeposit: String(r[4] || "").toLowerCase() === "כן"
+    };
+  });
+}
+
+/**
+ * וידוא רישום לקוח בתיק לקוח
+ */
+function ensureCustomerRecord(ss, name, phone, lastMessage) {
+  var sheet = getOrCreateSheet(ss, CONFIG.SHEETS.CLIENT_PORTFOLIO, [
+    "מזהה לקוח", "שם לקוח", "ח\"פ / ת.ז", "טלפון ראשי", "איש קשר", "כתובת ברירת מחדל", "סוג לקוח", "סטטוס פעיל"
+  ]);
+
+  var data = sheet.getDataRange().getValues();
+  var cleanPhone = String(phone).replace(/[^\d]/g, "");
 
   for (var i = 1; i < data.length; i++) {
-    if (data[i][0] && data[i][0].toString() === phone.toString()) {
-      rowIndex = i + 1;
-      break;
+    var existingPhone = String(data[i][3]).replace(/[^\d]/g, "");
+    if (existingPhone && cleanPhone && (existingPhone.indexOf(cleanPhone) !== -1 || cleanPhone.indexOf(existingPhone) !== -1)) {
+      sheet.getRange(i + 1, 2).setValue(name);
+      return;
     }
   }
 
-  if (rowIndex > -1) {
-    var currentCount = parseInt(custSheet.getRange(rowIndex, 6).getValue() || 0, 10);
-    custSheet.getRange(rowIndex, 5).setValue(nowStr);
-    custSheet.getRange(rowIndex, 6).setValue(currentCount + 1);
-  } else {
-    custSheet.appendRow([
-      phone, name, isGroup ? "קבוצה" : "פרטי", nowStr, nowStr, 1, "פנייה ראשונית: " + incomingText
-    ]);
-  }
+  var custId = "CUST-" + Math.floor(1000 + Math.random() * 9000);
+  sheet.appendRow([custId, name, "", phone, lastMessage, "הוד השרון", "פרטי", "פעיל"]);
 }
 
-function logConversation(phone, name, isGroup, incomingText, responseText, status) {
-  var ss = SpreadsheetApp.getActiveSpreadsheet();
-  if (!ss) return;
+// ==========================================
+// 5. כלי עזר ותשתיות
+// ==========================================
 
-  var logSheet = ss.getSheetByName(CONFIG.SHEETS.LOGS);
-  if (!logSheet) return;
+var cachedSS = null;
 
-  logSheet.appendRow([
-    "LOG_" + Date.now(),
-    new Date().toLocaleString("he-IL"),
-    phone,
-    name,
-    isGroup ? "קבוצה" : "פרטי",
-    incomingText,
-    responseText,
-    status || "טופל"
-  ]);
-}
-
-function updateDashboardCounters() {
-  var ss = SpreadsheetApp.getActiveSpreadsheet();
-  if (!ss) return;
-
-  var dashSheet = ss.getSheetByName(CONFIG.SHEETS.DASHBOARD);
-  var logSheet = ss.getSheetByName(CONFIG.SHEETS.LOGS);
-  if (!dashSheet || !logSheet) return;
-
-  var logData = logSheet.getDataRange().getValues();
-  var todayStr = new Date().toLocaleDateString("he-IL");
-  var todayCount = 0;
-
-  for (var i = 1; i < logData.length; i++) {
-    if (logData[i][1] && logData[i][1].toString().indexOf(todayStr) > -1) {
-      todayCount++;
-    }
-  }
-
-  dashSheet.getRange("A3").setValue(todayStr);
-  dashSheet.getRange("B3").setValue(todayCount);
-  dashSheet.getRange("E3").setValue("🟢 פעיל - תקין");
-  dashSheet.getRange("F3").setValue(new Date().toLocaleTimeString("he-IL"));
-}
-
-function isWithinBusinessHours() {
-  var now = new Date();
-  var currentHour = now.getHours();
-  var currentDay = now.getDay();
-  return CONFIG.BUSINESS_HOURS.ACTIVE_DAYS.indexOf(currentDay) > -1 && currentHour >= CONFIG.BUSINESS_HOURS.START_HOUR && currentHour < CONFIG.BUSINESS_HOURS.END_HOUR;
-}
-
-function getScriptProperty(key) {
+function getSpreadsheet() {
+  if (cachedSS) return cachedSS;
   try {
-    return PropertiesService.getScriptProperties().getProperty(key);
-  } catch (e) {
-    return null;
+    var active = SpreadsheetApp.getActiveSpreadsheet();
+    if (active) {
+      cachedSS = active;
+      return cachedSS;
+    }
+  } catch (e) {}
+
+  try {
+    if (typeof TARGET_SHEET_ID !== "undefined" && TARGET_SHEET_ID) {
+      cachedSS = SpreadsheetApp.openById(TARGET_SHEET_ID);
+      return cachedSS;
+    }
+  } catch (e) {}
+
+  throw new Error("לא ניתן לגשת לגליון הנתונים. ודא כי הסקריפט מחובר לגיליון פעיל.");
+}
+
+function getOrCreateSheet(ss, name, defaultHeaders) {
+  if (!ss) {
+    ss = getSpreadsheet();
   }
+  var sheet = ss.getSheetByName(name);
+  if (!sheet) {
+    sheet = ss.insertSheet(name);
+    sheet.setRightToLeft(true);
+    if (defaultHeaders && defaultHeaders.length > 0) {
+      sheet.appendRow(defaultHeaders);
+      sheet.getRange(1, 1, 1, defaultHeaders.length)
+        .setFontWeight("bold")
+        .setBackground("#0f172a")
+        .setFontColor("#ffffff");
+    }
+  }
+  return sheet;
+}
+
+function applyThemeToAllSheets(ss) {
+  if (!ss) ss = getSpreadsheet();
+  ss.getSheets().forEach(function(sheet) {
+    sheet.setRightToLeft(true);
+    var lastCol = sheet.getLastColumn();
+    if (sheet.getLastRow() > 0 && lastCol > 0) {
+      sheet.getRange(1, 1, 1, lastCol)
+        .setBackground("#0f172a")
+        .setFontColor("#ffffff")
+        .setFontWeight("bold")
+        .setHorizontalAlignment("center");
+    }
+  });
+}
+
+function readSheetAsJSON(sheet) {
+  if (!sheet) return [];
+  var lastRow = sheet.getLastRow();
+  var lastCol = sheet.getLastColumn();
+  if (lastRow <= 1 || lastCol <= 0) return [];
+
+  var headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0].map(function(h) {
+    return String(h || "").trim();
+  });
+
+  var rows = sheet.getRange(2, 1, lastRow - 1, lastCol).getValues();
+  return rows.map(function(row) {
+    var obj = {};
+    headers.forEach(function(header, idx) {
+      obj[header] = row[idx];
+    });
+    return obj;
+  });
+}
+
+function appendRowToTab(ss, tabName, rowData) {
+  var sheet = getOrCreateSheet(ss, tabName, []);
+  if (Array.isArray(rowData)) {
+    sheet.appendRow(rowData);
+  } else if (typeof rowData === "object") {
+    var values = Object.keys(rowData).map(function(k) { return rowData[k]; });
+    sheet.appendRow(values);
+  }
+}
+
+function logSystemError(tag, message, details) {
+  try {
+    var ss = getSpreadsheet();
+    var sheet = getOrCreateSheet(ss, CONFIG.SHEETS.SYSTEM_LOGS, [
+      "זמן אירוע", "תגית / קטגוריה", "תיאור הודעה", "פרטים נוספים (JSON)", "סטטוס טיפול"
+    ]);
+    var timestamp = Utilities.formatDate(new Date(), "Asia/Jerusalem", "yyyy-MM-dd HH:mm:ss");
+    sheet.appendRow([timestamp, tag, message, typeof details === "object" ? JSON.stringify(details) : String(details || ""), "דורש בדיקה ⚠️"]);
+  } catch (e) {}
 }
 
 function createJsonResponse(data, statusCode) {

@@ -36,7 +36,7 @@ const { Client, LocalAuth } = require('whatsapp-web.js');
 // ==============================================================================
 const PORT = process.env.PORT || 3000;
 const NOA_PHONE = process.env.NOA_PHONE || '972508861080';
-const GAS_WEBHOOK_URL = process.env.GAS_WEBHOOK_URL || 'https://script.google.com/macros/s/AKfycbyQUaDDWSiG6osVHQ8ZQEdXqVNBFFoaFcLxr6iJvJYZpsc8TSfQ_wjvc5HMtKyLsyG80A/exec';
+const GAS_WEBHOOK_URL = process.env.GAS_WEBHOOK_URL || 'https://script.google.com/macros/s/AKfycbxjs19kSI1zgpLuMd64aUcfVlKXfVE3_dBShrDfRbExy2fUXkmdhVzna28P3GnIrW4o/exec';
 const VERCEL_APP_URL = process.env.VERCEL_APP_URL || 'http://localhost:3000';
 const HUMAN_TYPING_DELAY_MS = parseInt(process.env.HUMAN_TYPING_DELAY_MS || '2500', 10);
 
