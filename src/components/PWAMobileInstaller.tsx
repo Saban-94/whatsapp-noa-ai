@@ -75,7 +75,14 @@ export const PWAMobileInstaller: React.FC<PWAMobileInstallerProps> = ({ isOpen, 
     };
   }, []);
 
-  // Handle native install click for Android / Chrome
+  const handleDismissAndNeverShow = () => {
+    try {
+      localStorage.setItem('pwa_banner_dismissed', 'true');
+    } catch (e) {}
+    stopRingtoneLoop();
+    setIsPlayingRingtone(false);
+    onClose();
+  };
   const handleInstallClick = async () => {
     if (!deferredPrompt) return;
     try {
@@ -266,13 +273,22 @@ export const PWAMobileInstaller: React.FC<PWAMobileInstallerProps> = ({ isOpen, 
                     לחץ על הכפתור למטה להתקנת האפליקציה ישירות למסך הבית ללא צורך בהורדה מחנות האפליקציות.
                   </p>
                   {deferredPrompt ? (
-                    <button
-                      onClick={handleInstallClick}
-                      className="w-full py-2.5 rounded-xl bg-[#10b981] hover:bg-[#059669] text-white font-medium text-xs flex items-center justify-center gap-2 transition-all shadow-lg active:scale-95"
-                    >
-                      <Download className="w-4 h-4" />
-                      <span>התקן עכשיו באנדרואיד</span>
-                    </button>
+                    <div className="flex flex-col sm:flex-row gap-2">
+                      <button
+                        onClick={handleInstallClick}
+                        className="flex-1 py-2.5 rounded-xl bg-[#10b981] hover:bg-[#059669] text-white font-medium text-xs flex items-center justify-center gap-2 transition-all shadow-lg active:scale-95"
+                      >
+                        <Download className="w-4 h-4" />
+                        <span>התקן עכשיו באנדרואיד</span>
+                      </button>
+                      <button
+                        onClick={handleDismissAndNeverShow}
+                        className="px-4 py-2.5 rounded-xl bg-gray-800 hover:bg-gray-700 text-gray-300 font-medium text-xs flex items-center justify-center gap-1.5 transition-colors"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                        <span>לא להתקין</span>
+                      </button>
+                    </div>
                   ) : (
                     <div className="p-2.5 rounded-lg bg-gray-800/80 text-xs text-gray-300 flex items-center gap-2">
                       <HelpCircle className="w-4 h-4 text-amber-400 shrink-0" />
@@ -437,17 +453,28 @@ export const PWAMobileInstaller: React.FC<PWAMobileInstallerProps> = ({ isOpen, 
         </div>
 
         {/* Footer */}
-        <div className="p-3 bg-[#0b141a] border-t border-gray-800 flex items-center justify-between shrink-0 text-xs text-gray-400">
-          <span>SabanOS & Noa AI Engine PWA</span>
+        <div className="p-3 bg-[#0b141a] border-t border-gray-800 flex flex-wrap items-center justify-between gap-2 shrink-0 text-xs text-gray-400">
+          <div className="flex items-center gap-2">
+            <button
+              onClick={handleDismissAndNeverShow}
+              className="px-3 py-1.5 rounded-lg bg-rose-950/40 hover:bg-rose-900/60 border border-rose-800/50 text-rose-300 font-medium transition-colors flex items-center gap-1"
+              title="אל תציג התראת התקנה יותר"
+            >
+              <X className="w-3.5 h-3.5" />
+              <span>אל תציג שוב</span>
+            </button>
+            <span className="text-[11px] text-gray-500 hidden sm:inline">SabanOS & Noa AI Engine PWA</span>
+          </div>
+
           <button
             onClick={() => {
               stopRingtoneLoop();
               setIsPlayingRingtone(false);
               onClose();
             }}
-            className="px-4 py-1.5 rounded-lg bg-[#1e293b] hover:bg-gray-800 text-white font-medium transition-colors"
+            className="px-4 py-1.5 rounded-lg bg-[#1e293b] hover:bg-gray-800 text-white font-medium transition-colors flex items-center gap-1.5"
           >
-            סגור
+            <span>סגור</span>
           </button>
         </div>
       </div>

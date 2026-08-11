@@ -55,7 +55,10 @@ export const PWAInstallPrompt: React.FC<PWAInstallPromptProps> = ({ darkTheme = 
     const handleBeforeInstallPrompt = (e: Event) => {
       e.preventDefault();
       setDeferredPrompt(e as BeforeInstallPromptEvent);
-      setShowInstallBanner(true);
+      const isDismissed = localStorage.getItem('pwa_banner_dismissed');
+      if (!isDismissed) {
+        setShowInstallBanner(true);
+      }
     };
 
     const handleAppInstalled = () => {
@@ -115,6 +118,13 @@ export const PWAInstallPrompt: React.FC<PWAInstallPromptProps> = ({ darkTheme = 
     playNotificationSound('auto');
   };
 
+  const handleDismissInstallBanner = () => {
+    setShowInstallBanner(false);
+    try {
+      localStorage.setItem('pwa_banner_dismissed', 'true');
+    } catch (e) {}
+  };
+
   return (
     <>
       {/* Toast Notification when notifications are granted */}
@@ -147,11 +157,12 @@ export const PWAInstallPrompt: React.FC<PWAInstallPromptProps> = ({ darkTheme = 
               <span>התקן אפליקציה</span>
             </button>
             <button
-              onClick={() => setShowInstallBanner(false)}
-              className="p-1.5 rounded-lg hover:bg-white/10 text-gray-300 transition-colors"
-              title="סגור"
+              onClick={handleDismissInstallBanner}
+              className="px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-gray-200 font-medium text-xs transition-colors flex items-center gap-1"
+              title="סגור ולא להתקין"
             >
-              <X className="w-4 h-4" />
+              <X className="w-3.5 h-3.5" />
+              <span>לא עכשיו</span>
             </button>
           </div>
         </div>
