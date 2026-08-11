@@ -452,6 +452,30 @@ app.post("/api/listener/event", async (req, res) => {
     listenerEvents.push(newEvent);
     if (listenerEvents.length > 100) listenerEvents.shift();
 
+    // Direct Webhook dispatch to Google Apps Script (GAS) to append inquiry/order automatically to Google Sheets
+    const gasWebhookUrl = process.env.GAS_WEBHOOK_URL || serverSettings.webAppUrl;
+    if (gasWebhookUrl && serverSettings.webhookSyncEnabled) {
+      const cleanSenderPhone = phone ? phone.replace(/[^\d+]/g, "") : "";
+      const isOrderGroup = isGroup && (groupId.includes("order") || groupId.includes("סידור") || groupId.includes("120363"));
+      
+      fetch(gasWebhookUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "appendInquiry",
+          timestamp: new Date().toISOString(),
+          senderName: senderName,
+          customerPhone: cleanSenderPhone,
+          incomingMessage: incomingMessage,
+          source: isOrderGroup ? 'order_group' : (isGroup ? 'group' : 'direct'),
+          messageId: body.messageId || body.id || `MSG-${Date.now()}`,
+          status: 'נקלט 🟢'
+        }),
+      }).catch((err: any) => {
+        console.warn('⚠️ שגיאה בשליחת Webhook לגליון:', err?.message || err);
+      });
+    }
+
     // Log to webhookLogs for System Logs tab
     const logEntry = {
       id: `wh_evt_${Date.now()}`,
