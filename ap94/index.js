@@ -16,8 +16,8 @@
  *    pm2 start index.js --name "noa-whatsapp-server"
  * 
  * 5. שמור והגדר שירות אוטומטי בעליית המחשב (Windows Service):
- *    pm2 save
- *    pm2-service-install -n PM2
+ pm2 save
+pm2-service-install -n PM2
  * 
  * 6. בדיקת סטטוס ולוגים בזמן אמת:
  *    pm2 status
@@ -38,7 +38,7 @@ import noaBrain from './noaBrain.js';
 // ==============================================================================
 const PORT = process.env.PORT || 3000;
 const NOA_PHONE = process.env.NOA_PHONE || '972508861080';
-const GAS_WEBHOOK_URL = process.env.GAS_WEBHOOK_URL || 'https://script.google.com/macros/s/AKfycbxjs19kSI1zgpLuMd64aUcfVlKXfVE3_dBShrDfRbExy2fUXkmdhVzna28P3GnIrW4o/exec';
+const GAS_WEBHOOK_URL = process.env.GAS_WEBHOOK_URL || 'https://script.google.com/macros/s/AKfycbz-pahAwjWD1d406RMp6Y0jnlOoiK8kEaJHOXXOGQEg-NADTWddK2IWKXAdqZZsXrIpOw/exec';
 const VERCEL_APP_URL = process.env.VERCEL_APP_URL || 'http://localhost:3000';
 const HUMAN_TYPING_DELAY_MS = parseInt(process.env.HUMAN_TYPING_DELAY_MS || '2500', 10);
 
@@ -126,15 +126,27 @@ client.on('disconnected', async (reason) => {
   serverStats.status = 'disconnected';
   serverStats.lastError = `Disconnected: ${reason}`;
   console.error('⚠️ הלקוח התנתק מ-WhatsApp! סיבה:', reason);
-  console.log('🔄 מפעיל מנגנון חיבור מחדש אוטומטי (Self-Healing) תוך 5 שניות...');
   
-  setTimeout(async () => {
-    try {
-      await client.initialize();
-    } catch (err) {
-      console.error('❌ שגיאה במהלך אתחול מחדש:', err.message);
-    }
-  }, 5000);
+  try {
+    await client.destroy();
+  } catch (e) {
+    // להתעלם ושגיאות סגירת דפדפן
+  }
+
+  if (reason === 'LOGOUT') {
+    console.log('🔒 התרחש LOGOUT מ-WhatsApp. מאתחל מחדש את תהליך Node ליצירת קוד QR חדש...');
+    process.exit(1); // PM2 יפעיל מחדש בצורה נקייה וישחרר נעילות קבצים
+  } else {
+    console.log('🔄 מפעיל מנגנון חיבור מחדש אוטומטי (Self-Healing) תוך 5 שניות...');
+    setTimeout(async () => {
+      try {
+        await client.initialize();
+      } catch (err) {
+        console.error('❌ שגיאה במהלך אתחול מחדש:', err.message);
+        process.exit(1); // יציאה כדי ש-PM2 יבצע אתחול מלא וישחרר נעילות Chromium
+      }
+    }, 5000);
+  }
 });
 
 client.on('auth_failure', (msg) => {

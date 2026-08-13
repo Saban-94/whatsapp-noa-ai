@@ -14,7 +14,7 @@ const CONFIG = {
   BUSINESS_NAME: 'ח. סבן חומרי בניין 1994 בע"מ',
   AI_NAME: "נועה AI",
   DEFAULT_PHONE: "972508861080",
-  DEFAULT_WEBHOOK_URL: "https://script.google.com/macros/s/AKfycbxjs19kSI1zgpLuMd64aUcfVlKXfVE3_dBShrDfRbExy2fUXkmdhVzna28P3GnIrW4o/exec",
+  DEFAULT_WEBHOOK_URL: "https://script.google.com/macros/s/AKfycbz-pahAwjWD1d406RMp6Y0jnlOoiK8kEaJHOXXOGQEg-NADTWddK2IWKXAdqZZsXrIpOw/exec",
   
   SYSTEM_INSTRUCTIONS: `אתה 'נועה AI' - מנהלת התפעול והלוגיסטיקה הווירטואלית של 'ח. סבן חומרי בניין 1994 בע"מ'.
 תפקידך לספק מענה מהיר, מדויק ומקצועי ללקוחות, קבלנים ונהגים בוואטסאפ.

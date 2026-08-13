@@ -31,9 +31,14 @@ import {
   MessageSquare,
   Table,
   LayoutGrid,
+  Download,
+  BarChart2,
 } from 'lucide-react';
+import { motion, AnimatePresence } from 'motion/react';
 import { StagedOrder, StagedOrderStatus, NormalizedOrderItem } from '../../types';
 import { playNotificationSound } from '../../utils/notificationService';
+import { exportOrdersToCSV } from '../../utils/csvExporter';
+import { OrdersAnalyticsDashboard } from './OrdersAnalyticsDashboard';
 
 interface OrdersStagingTabProps {
   stagedOrders?: StagedOrder[];
@@ -134,6 +139,7 @@ export const OrdersStagingTab: React.FC<OrdersStagingTabProps> = ({
   const [isSendingReport, setIsSendingReport] = useState(false);
   // View Mode: 'sheet' (Google Sheets table) or 'cards' (visual cards)
   const [viewMode, setViewMode] = useState<'sheet' | 'cards'>('sheet');
+  const [showAnalytics, setShowAnalytics] = useState<boolean>(true);
   const [toastMsg, setToastMsg] = useState<string | null>(null);
   const [submittingOrders, setSubmittingOrders] = useState<Record<string, boolean>>({});
 
@@ -656,8 +662,37 @@ export const OrdersStagingTab: React.FC<OrdersStagingTabProps> = ({
               <option value="סופק" className="bg-[#0f172a] text-emerald-300">סופק</option>
             </select>
           </div>
+
+          {/* Export CSV Button */}
+          <button
+            onClick={() => exportOrdersToCSV(filteredOrders, 'SabanOS_Orders_Report')}
+            className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold text-xs rounded-xl flex items-center gap-1.5 cursor-pointer shadow-lg transition-all active:scale-95 shrink-0"
+            title="הורד דוח מסכם CSV של ההזמנות המוצגות כעת"
+          >
+            <Download className="w-3.5 h-3.5 text-white" />
+            <span>יצוא ל-CSV</span>
+          </button>
+
+          {/* Analytics Dashboard Toggle Button */}
+          <button
+            onClick={() => setShowAnalytics(!showAnalytics)}
+            className={`px-3.5 py-1.5 rounded-xl font-extrabold text-xs flex items-center gap-1.5 transition-all cursor-pointer border shrink-0 ${
+              showAnalytics
+                ? 'bg-indigo-600 text-white border-indigo-500 shadow-lg shadow-indigo-500/20'
+                : 'bg-[#0f172a] text-indigo-300 border-[#334155] hover:bg-slate-800'
+            }`}
+            title="הצג/הסתר דשבורד ויזואלי של פילוג סטטוסים וביצועי הובלה"
+          >
+            <BarChart2 className="w-3.5 h-3.5 text-indigo-400" />
+            <span>{showAnalytics ? 'הסתר אנליטיקה' : 'דשבורד Recharts'}</span>
+          </button>
         </div>
       </div>
+
+      {/* Live Recharts Analytics Dashboard Collapsible Panel */}
+      {showAnalytics && (
+        <OrdersAnalyticsDashboard orders={filteredOrders} />
+      )}
 
       {/* Main View: Sheet Table OR Cards */}
       {viewMode === 'sheet' ? (
@@ -797,7 +832,12 @@ export const OrdersStagingTab: React.FC<OrdersStagingTabProps> = ({
               const isDelivered = order.status === 'סופק' || order.status === 'הושלם';
 
               return (
-                <div
+                <motion.div
+                  layout
+                  initial={{ opacity: 0, y: 15, scale: 0.98 }}
+                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                  exit={{ opacity: 0, scale: 0.95 }}
+                  transition={{ duration: 0.25, delay: orderIdx * 0.03 }}
                   key={`${order.id}-${orderIdx}`}
                   className={`bg-slate-900/90 border rounded-3xl p-5 space-y-4 shadow-xl transition-all duration-300 relative overflow-hidden backdrop-blur-md group hover:shadow-2xl ${
                     isUnfulfilled
@@ -1008,7 +1048,7 @@ export const OrdersStagingTab: React.FC<OrdersStagingTabProps> = ({
                       })}
                     </div>
                   </div>
-                </div>
+                </motion.div>
               );
             })
           )}

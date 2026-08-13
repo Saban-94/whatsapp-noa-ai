@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { motion, AnimatePresence } from 'motion/react';
 import { InboundInquiry } from '../../types';
 import { OrdersStagingTab } from './OrdersStagingTab';
 import {
@@ -376,7 +377,12 @@ export const InboundOrdersDashboard: React.FC<InboundOrdersDashboardProps> = ({
               const isPending = inq.status === 'חדש';
 
               return (
-                <div
+                <motion.div
+                  layout
+                  initial={{ opacity: 0, y: 15, scale: 0.98 }}
+                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                  exit={{ opacity: 0, scale: 0.95 }}
+                  transition={{ duration: 0.25, delay: idx * 0.04 }}
                   key={`${inq.id || 'inq'}-${idx}`}
                   className={`p-5 rounded-2xl border transition-all duration-200 flex flex-col justify-between space-y-4 shadow-lg ${
                     isPending
@@ -474,7 +480,7 @@ export const InboundOrdersDashboard: React.FC<InboundOrdersDashboardProps> = ({
                       )}
                     </button>
                   </div>
-                </div>
+                </motion.div>
               );
             })}
           </div>
